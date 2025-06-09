@@ -1,0 +1,46 @@
+# Build output directories
+bin/
+obj/
+
+# User-specific files
+*.user
+*.suo
+*.rsuser
+*.vspx
+*.vspf
+*.vspcc
+
+# Visual Studio related files
+.vscode/
+.vs/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Package dependencies
+node_modules/
+packages/
+
+# Environment and configuration
+appsettings*.json
+secrets.json
+
+# JetBrains Rider and Resharper
+.idea/
+*.sln.DotSettings
+
+# Generated files
+**/Generated/
+*.g.cs
+*.g.fs
+*.g.vb
+
+# Local database files
+*.mdf
+*.ldf
+
+# Azure and Docker artifacts
+.azure/
+docker-compose.override.yml
