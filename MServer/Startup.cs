@@ -22,7 +22,12 @@ namespace MServer
 
         public Startup(IConfiguration configuration)
         {
-            Configuration = configuration;
+            // Replace the default configuration with one that uses "appSettings.json"
+            var builder = new ConfigurationBuilder()
+                .SetBasePath(AppContext.BaseDirectory)
+                .AddJsonFile("appSettings.json", optional: false, reloadOnChange: true)
+                .AddEnvironmentVariables();
+            Configuration = builder.Build();
         }
 
         public void ConfigureServices(IServiceCollection services)
