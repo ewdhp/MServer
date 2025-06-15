@@ -491,6 +491,25 @@ namespace MServer.Middleware
                             state.EndTime = DateTime.UtcNow;
                             state.Error = null;
                             _logger.LogInformation("cmd result: {Outputs}", state.Outputs);
+
+                            // --- NEW LOGIC: Pass output to dependent nodes' Inputs ---
+                            if (dependencyMap.TryGetValue(state.NodeId, out var dependents))
+                            {
+                                foreach (var depNodeId in dependencyMap
+                                    .Where(kvp => kvp.Value.Contains(state.NodeId))
+                                    .Select(kvp => kvp.Key))
+                                {
+                                    if (_nodeStates.TryGetValue(depNodeId, out var depState))
+                                    {
+                                        // Only set Inputs if not already set (null or default)
+                                        if (depState.Inputs == null)
+                                        {
+                                            depState.Inputs = state.Outputs;
+                                        }
+                                    }
+                                }
+                            }
+                            // --- END NEW LOGIC ---
                         }
                         catch (Exception ex)
                         {
