@@ -1,0 +1,25 @@
+{
+  "type": "graph_execute",
+  "ssh": {
+    "host": "localhost",
+    "port": 22,
+    "username": "ewd",
+    "password": "2020"
+  },
+  "nodes": [
+    {
+      "id": "node1",
+      "inputs": {
+        "host": "localhost",
+        "username": "ewd",
+        "password": "2020"
+      },
+      "args": "ls -la",
+      "parallel": false,
+      "times": 1,
+      "dependencies": [],
+      "maxRetries": 2,
+      "timeoutSeconds": 10
+    }
+  ]
+}
