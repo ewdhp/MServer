@@ -501,11 +501,69 @@ namespace MServer.Middleware
                                 {
                                     if (_nodeStates.TryGetValue(depNodeId, out var depState))
                                     {
-                                        // Only set Inputs if not already set (null or default)
-                                        if (depState.Inputs == null)
+                                        // Always append the parent's output to the child node's Inputs["outputs"] array
+                                        // If Inputs is a JsonElement, convert to Dictionary for manipulation
+                                        Dictionary<string, object> inputsDict = null;
+                                        if (depState.Inputs is JsonElement je && je.ValueKind == JsonValueKind.Object)
                                         {
-                                            depState.Inputs = state.Outputs;
+                                            inputsDict = JsonSerializer.Deserialize<Dictionary<string, object>>(je.GetRawText());
                                         }
+                                        else if (depState.Inputs is Dictionary<string, object> dict)
+                                        {
+                                            inputsDict = dict;
+                                        }
+                                        else
+                                        {
+                                            // If Inputs is not set or not a dictionary, initialize it as a new dictionary
+                                            inputsDict = new Dictionary<string, object>();
+                                        }
+
+                                        // Ensure SSH credentials are preserved (if present)
+                                        if (inputsDict.Count == 0 && depState.Inputs != null)
+                                        {
+                                            // Try to copy known SSH fields from the original Inputs
+                                            var sshFields = new[] { "host", "username", "password", "port" };
+                                            if (depState.Inputs is SshDetails ssh)
+                                            {
+                                                inputsDict["host"] = ssh.Host;
+                                                inputsDict["username"] = ssh.Username;
+                                                inputsDict["password"] = ssh.Password;
+                                                inputsDict["port"] = ssh.Port;
+                                            }
+                                            else if (depState.Inputs is JsonElement sshElem && sshElem.ValueKind == JsonValueKind.Object)
+                                            {
+                                                foreach (var field in sshFields)
+                                                {
+                                                    if (sshElem.TryGetProperty(field, out var val))
+                                                    {
+                                                        inputsDict[field] = val.ValueKind == JsonValueKind.Number ? val.GetInt32() : val.GetString();
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        // Add or append to the "outputs" array
+                                        if (!inputsDict.TryGetValue("outputs", out var outputsObj) || outputsObj == null)
+                                        {
+                                            inputsDict["outputs"] = new List<object> { state.Outputs };
+                                        }
+                                        else if (outputsObj is List<object> outputsList)
+                                        {
+                                            outputsList.Add(state.Outputs);
+                                        }
+                                        else if (outputsObj is JsonElement outputsElem && outputsElem.ValueKind == JsonValueKind.Array)
+                                        {
+                                            var list = JsonSerializer.Deserialize<List<object>>(outputsElem.GetRawText());
+                                            list.Add(state.Outputs);
+                                            inputsDict["outputs"] = list;
+                                        }
+                                        else
+                                        {
+                                            // If "outputs" exists but is not a list, replace it with a new list
+                                            inputsDict["outputs"] = new List<object> { outputsObj, state.Outputs };
+                                        }
+
+                                        depState.Inputs = inputsDict;
                                     }
                                 }
                             }
