@@ -51,181 +51,115 @@ namespace MServer.Middleware
                 await _next(context); // Pass the request to the next middleware
             }
         }
-private async Task HandleWebSocketConnection(System.Net.WebSockets.WebSocket webSocket)
-{
-    var buffer = new byte[1024 * 4];
-    _logger.LogInformation("WebSocket connection established.");
-
-    SshDetails mainSshDetails = null;
-    Node[] initialNodes = null;
-    Dictionary<string, List<string>> initialDependencyMap = null;
-    bool initialGraphExecute = false;
-
-    System.Net.WebSockets.WebSocketReceiveResult result = null;
-
-    CancellationTokenSource shutdownCts = new CancellationTokenSource();
-    AppDomain.CurrentDomain.ProcessExit += (s, e) => shutdownCts.Cancel();
-    Console.CancelKeyPress += (s, e) => { shutdownCts.Cancel(); e.Cancel = false; };
-
-    try
-    {
-        // Receive the first message (could be SSH details or all-in-one graph_execute)
-        result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), System.Threading.CancellationToken.None);
-        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-
-        if (string.IsNullOrWhiteSpace(message))
+        private async Task HandleWebSocketConnection(System.Net.WebSockets.WebSocket webSocket)
         {
-            _logger.LogError("Received empty message from WebSocket client.");
-            await webSocket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.InvalidPayloadData, "Empty message received", System.Threading.CancellationToken.None);
-            return;
-        }
+            var buffer = new byte[1024 * 4];
+            _logger.LogInformation("WebSocket connection established.");
 
-        _logger.LogInformation("Received initial message: {Message}", message);
+            SshDetails mainSshDetails = null;
+            Node[] initialNodes = null;
+            Dictionary<string, List<string>> initialDependencyMap = null;
+            bool initialGraphExecute = false;
 
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        JsonDocument doc = JsonDocument.Parse(message);
-        JsonElement root = doc.RootElement;
+            System.Net.WebSockets.WebSocketReceiveResult result = null;
 
-        // Parse the message just once and fill the needed data types
-        if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "graph_execute" && root.TryGetProperty("ssh", out var sshProp))
-        {
-            mainSshDetails = new SshDetails
-            {
-                Host = sshProp.GetProperty("host").GetString(),
-                Port = sshProp.TryGetProperty("port", out var portProp) ? portProp.GetInt32() : 22,
-                Username = sshProp.GetProperty("username").GetString(),
-                Password = sshProp.GetProperty("password").GetString()
-            };
-            _logger.LogInformation("Parsed SSH details from all-in-one message: Host={Host}, Username={Username}", mainSshDetails.Host, mainSshDetails.Username);
-
-            // Check for nodes in the initial message
-            if (root.TryGetProperty("nodes", out var nodesProp) && nodesProp.ValueKind == JsonValueKind.Array)
-            {
-                initialGraphExecute = true;
-                initialNodes = JsonSerializer.Deserialize<Node[]>(nodesProp.GetRawText(), options);
-                initialDependencyMap = initialNodes.ToDictionary(
-                    n => n.Id,
-                    n => n.Dependencies?.ToList() ?? new List<string>()
-                );
-            }
-            _logger.LogInformation("Initial graph execution detected with {Count} nodes, initialgraph {initialGraphExecute}.", initialNodes?.Length ?? 0, initialGraphExecute);
-        }
-
-        if (mainSshDetails == null || string.IsNullOrEmpty(mainSshDetails.Host) || string.IsNullOrEmpty(mainSshDetails.Username) || string.IsNullOrEmpty(mainSshDetails.Password))
-        {
-            throw new ArgumentException("Invalid SSH details. Host, username, and password must be provided.");
-        }
-
-        _logger.LogInformation("Attempting to connect to SSH server at {Host} with username {Username}", mainSshDetails.Host, mainSshDetails.Username);
-
-        using (var sshClient = new SshClient(mainSshDetails.Host, mainSshDetails.Username, mainSshDetails.Password))
-        {
-            sshClient.Connect();
-            _logger.LogInformation("SSH connection established to {Host}.", mainSshDetails.Host);
-
-            var shellStream = sshClient.CreateShellStream("xterm", 80, 24, 800, 600, 1024);
-            _logger.LogInformation("SSH shell stream created.");
-
-            // Start reading from the shell stream in a background task
-            var shellTask = Task.Run(async () =>
-            {
-                var sshBuffer = new byte[1024];
-                while (sshClient.IsConnected && !shutdownCts.IsCancellationRequested)
-                {
-                    try
-                    {
-                        var bytesRead = shellStream.Read(sshBuffer, 0, sshBuffer.Length);
-                        if (bytesRead > 0)
-                        {
-                            var sshOutput = Encoding.UTF8.GetString(sshBuffer, 0, bytesRead);
-                            _logger.LogDebug("Received data from SSH: {Output}", sshOutput);
-
-                            var responseBytes = Encoding.UTF8.GetBytes(sshOutput);
-                            await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error while reading from SSH shell stream.");
-                        break;
-                    }
-                }
-            }, shutdownCts.Token);
+            CancellationTokenSource shutdownCts = new CancellationTokenSource();
+            AppDomain.CurrentDomain.ProcessExit += (s, e) => shutdownCts.Cancel();
+            Console.CancelKeyPress += (s, e) => { shutdownCts.Cancel(); e.Cancel = false; };
 
             try
             {
-                if (initialGraphExecute && initialNodes != null)
+                // Receive the first message (could be SSH details or all-in-one graph_execute)
+                result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), System.Threading.CancellationToken.None);
+                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+
+                if (string.IsNullOrWhiteSpace(message))
                 {
-                    _currentExecutionId = Guid.NewGuid().ToString();
-
-                    foreach (var node in initialNodes)
-                    {
-                        var state = new NodeExecutionState
-                        {
-                            NodeId = node.Id,
-                            Status = "pending",
-                            Inputs = node.Inputs,
-                            Args = node.Args,
-                            Parallel = node.Parallel,
-                            Times = node.Times,
-                            Dependencies = node.Dependencies,
-                            RetryCount = 0,
-                            MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
-                            TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
-                        };
-                        _nodeStates[node.Id] = state;
-                    }
-
-                    // Pass already parsed initialNodes and initialDependencyMap
-                    _ = ExecuteGraphAsync(initialNodes, initialDependencyMap, webSocket, mainSshDetails, _currentExecutionId);
-
-                    var stateJson = JsonSerializer.Serialize(new { executionId = _currentExecutionId, nodes = _nodeStates.Values });
-                    await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(stateJson)), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                    _logger.LogError("Received empty message from WebSocket client.");
+                    await webSocket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.InvalidPayloadData, "Empty message received", System.Threading.CancellationToken.None);
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Exception during initial node execution setup.");
-            }
 
-            // Handle WebSocket input and forward it to the SSH shell
-            while (webSocket.State == System.Net.WebSockets.WebSocketState.Open && (result == null || !result.CloseStatus.HasValue) && !shutdownCts.IsCancellationRequested)
-            {
-                _logger.LogInformation("Waiting for WebSocket input...");
-                try
+                _logger.LogInformation("Received initial message: {Message}", message);
+
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                JsonDocument doc = JsonDocument.Parse(message);
+                JsonElement root = doc.RootElement;
+
+                // Parse the message just once and fill the needed data types
+                if (root.TryGetProperty("type", out var typeProp) && typeProp.GetString() == "graph_execute" && root.TryGetProperty("ssh", out var sshProp))
                 {
-                    var receiveTask = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), shutdownCts.Token);
-                    result = await receiveTask;
-                    var wsMessage = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    if (string.IsNullOrWhiteSpace(wsMessage))
+                    mainSshDetails = new SshDetails
                     {
-                        continue;
+                        Host = sshProp.GetProperty("host").GetString(),
+                        Port = sshProp.TryGetProperty("port", out var portProp) ? portProp.GetInt32() : 22,
+                        Username = sshProp.GetProperty("username").GetString(),
+                        Password = sshProp.GetProperty("password").GetString()
+                    };
+                    _logger.LogInformation("Parsed SSH details from all-in-one message: Host={Host}, Username={Username}", mainSshDetails.Host, mainSshDetails.Username);
+
+                    // Check for nodes in the initial message
+                    if (root.TryGetProperty("nodes", out var nodesProp) && nodesProp.ValueKind == JsonValueKind.Array)
+                    {
+                        initialGraphExecute = true;
+                        initialNodes = JsonSerializer.Deserialize<Node[]>(nodesProp.GetRawText(), options);
+                        initialDependencyMap = initialNodes.ToDictionary(
+                            n => n.Id,
+                            n => n.Dependencies?.ToList() ?? new List<string>()
+                        );
                     }
+                    _logger.LogInformation("Initial graph execution detected with {Count} nodes, initialgraph {initialGraphExecute}.", initialNodes?.Length ?? 0, initialGraphExecute);
+                }
 
-                    _logger.LogInformation("Received data from WebSocket client: {Message}", wsMessage);
+                if (mainSshDetails == null || string.IsNullOrEmpty(mainSshDetails.Host) || string.IsNullOrEmpty(mainSshDetails.Username) || string.IsNullOrEmpty(mainSshDetails.Password))
+                {
+                    throw new ArgumentException("Invalid SSH details. Host, username, and password must be provided.");
+                }
 
-                    // Parse the message only once
-                    var innerDoc = JsonDocument.Parse(wsMessage);
-                    var innerRoot = innerDoc.RootElement;
+                _logger.LogInformation("Attempting to connect to SSH server at {Host} with username {Username}", mainSshDetails.Host, mainSshDetails.Username);
 
-                    string type = innerRoot.TryGetProperty("type", out var typeProp2) ? typeProp2.GetString() : null;
+                using (var sshClient = new SshClient(mainSshDetails.Host, mainSshDetails.Username, mainSshDetails.Password))
+                {
+                    sshClient.Connect();
+                    _logger.LogInformation("SSH connection established to {Host}.", mainSshDetails.Host);
 
-                    if (type == "graph_execute")
+                    var shellStream = sshClient.CreateShellStream("xterm", 80, 24, 800, 600, 1024);
+                    _logger.LogInformation("SSH shell stream created.");
+
+                    // Start reading from the shell stream in a background task
+                    var shellTask = Task.Run(async () =>
                     {
-                        // Deserialize GraphExecuteMessage only once
-                        var graphMsg = JsonSerializer.Deserialize<GraphExecuteMessage>(wsMessage);
-                        if (graphMsg?.Nodes != null)
+                        var sshBuffer = new byte[1024];
+                        while (sshClient.IsConnected && !shutdownCts.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                var bytesRead = shellStream.Read(sshBuffer, 0, sshBuffer.Length);
+                                if (bytesRead > 0)
+                                {
+                                    var sshOutput = Encoding.UTF8.GetString(sshBuffer, 0, bytesRead);
+                                    _logger.LogDebug("Received data from SSH: {Output}", sshOutput);
+
+                                    var responseBytes = Encoding.UTF8.GetBytes(sshOutput);
+                                    await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, CancellationToken.None);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(ex, "Error while reading from SSH shell stream.");
+                                break;
+                            }
+                        }
+                    }, shutdownCts.Token);
+
+                    try
+                    {
+                        if (initialGraphExecute && initialNodes != null)
                         {
                             _currentExecutionId = Guid.NewGuid().ToString();
 
-                            var dependencyMap = graphMsg.Nodes.ToDictionary(
-                                n => n.Id,
-                                n => n.Dependencies?.ToList() ?? new List<string>()
-                            );
-
-                            foreach (var node in graphMsg.Nodes)
+                            foreach (var node in initialNodes)
                             {
-                                _logger.LogInformation("Initializing node {NodeId} with arguments: {Args}, inputs: {Inputs}, parallel: {Parallel}, times: {Times}, dependencies: {Dependencies}", node.Id, node.Args, node.Inputs, node.Parallel, node.Times, string.Join(", ", node.Dependencies ?? Enumerable.Empty<string>()));
                                 var state = new NodeExecutionState
                                 {
                                     NodeId = node.Id,
@@ -242,148 +176,207 @@ private async Task HandleWebSocketConnection(System.Net.WebSockets.WebSocket web
                                 _nodeStates[node.Id] = state;
                             }
 
-                            // Pass already parsed nodes and dependencyMap
-                            _ = ExecuteGraphAsync(graphMsg.Nodes, dependencyMap, webSocket, mainSshDetails, _currentExecutionId);
+                            // Pass already parsed initialNodes and initialDependencyMap
+                            _ = ExecuteGraphAsync(initialNodes, initialDependencyMap, webSocket, mainSshDetails, _currentExecutionId);
 
                             var stateJson = JsonSerializer.Serialize(new { executionId = _currentExecutionId, nodes = _nodeStates.Values });
                             await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(stateJson)), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
                         }
                     }
-                    else if (type == "graph_restore")
+                    catch (Exception ex)
                     {
-                        var restoreMsg = JsonSerializer.Deserialize<GraphRestoreMessage>(wsMessage);
-                        if (restoreMsg?.NodeStates != null)
-                        {
-                            foreach (var state in restoreMsg.NodeStates)
-                            {
-                                _nodeStates[state.NodeId] = state;
-                            }
-                            await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"restore_ack\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                        }
+                        _logger.LogError(ex, "Exception during initial node execution setup.");
                     }
-                    else if (type == "pause")
-                    {
-                        _isPaused = true;
-                        await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"paused\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                    }
-                    else if (type == "resume")
-                    {
-                        _isPaused = false;
-                        await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"resumed\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                    }
-                    else if (type == "save_state")
-                    {
-                        if (!string.IsNullOrEmpty(_currentExecutionId))
-                            File.WriteAllText(GetPersistenceFile(_currentExecutionId), JsonSerializer.Serialize(_nodeStates.Values));
-                        await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"saved\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                    }
-                    else if (type == "load_state")
-                    {
-                        var execId = innerRoot.TryGetProperty("executionId", out var execIdProp)
-                            ? execIdProp.GetString()
-                            : null;
-                        if (!string.IsNullOrEmpty(execId) && File.Exists(GetPersistenceFile(execId)))
-                        {
-                            var json = File.ReadAllText(GetPersistenceFile(execId));
-                            var states = JsonSerializer.Deserialize<List<NodeExecutionState>>(json);
-                            if (states != null)
-                            {
-                                foreach (var state in states)
-                                    _nodeStates[state.NodeId] = state;
-                            }
-                            _currentExecutionId = execId;
-                            await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"loaded\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                        }
-                    }
-                    else if (type == "command" && innerRoot.TryGetProperty("command", out var cmdProp) && !string.IsNullOrEmpty(cmdProp.GetString()))
-                    {
-                        var command = cmdProp.GetString();
-                        _logger.LogInformation("Executing command: {Command}", command);
-                        var cmd = sshClient.RunCommand(command);
-                        var output = cmd.Result + cmd.Error;
-                        var responseBytes = Encoding.UTF8.GetBytes(output);
-                        await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                    }
-                    else if (type == "schedule_recurring")
-                    {
-                        var intervalSeconds = innerRoot.GetProperty("intervalSeconds").GetInt32();
-                        var nodes = innerRoot.GetProperty("nodes").Deserialize<Node[]>();
-                        var recurringId = Guid.NewGuid().ToString();
-                        var dependencyMap = nodes.ToDictionary(n => n.Id, n => n.Dependencies?.ToList() ?? new List<string>());
-                        var cts = new CancellationTokenSource();
-                        _recurringExecutions[recurringId] = cts;
 
-                        _ = Task.Run(async () =>
+                    // Handle WebSocket input and forward it to the SSH shell
+                    while (webSocket.State == System.Net.WebSockets.WebSocketState.Open && (result == null || !result.CloseStatus.HasValue) && !shutdownCts.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("Waiting for WebSocket input...");
+                        try
                         {
-                            while (!cts.Token.IsCancellationRequested)
+                            var receiveTask = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), shutdownCts.Token);
+                            result = await receiveTask;
+                            var wsMessage = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            if (string.IsNullOrWhiteSpace(wsMessage))
                             {
-                                var execId = Guid.NewGuid().ToString();
-                                foreach (var node in nodes)
+                                continue;
+                            }
+
+                            _logger.LogInformation("Received data from WebSocket client: {Message}", wsMessage);
+
+                            // Parse the message only once
+                            var innerDoc = JsonDocument.Parse(wsMessage);
+                            var innerRoot = innerDoc.RootElement;
+
+                            string type = innerRoot.TryGetProperty("type", out var typeProp2) ? typeProp2.GetString() : null;
+
+                            if (type == "graph_execute")
+                            {
+                                // Deserialize GraphExecuteMessage only once
+                                var graphMsg = JsonSerializer.Deserialize<GraphExecuteMessage>(wsMessage);
+                                if (graphMsg?.Nodes != null)
                                 {
-                                    var state = new NodeExecutionState
-                                    {
-                                        NodeId = node.Id,
-                                        Status = "pending",
-                                        Inputs = node.Inputs,
-                                        Args = node.Args,
-                                        Parallel = node.Parallel,
-                                        Times = node.Times,
-                                        Dependencies = node.Dependencies,
-                                        RetryCount = 0,
-                                        MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
-                                        TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
-                                    };
-                                    _nodeStates[node.Id] = state;
-                                }
-                                await ExecuteGraphAsync(nodes, dependencyMap, webSocket, mainSshDetails, execId);
-                                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), cts.Token);
-                            }
-                        }, cts.Token);
+                                    _currentExecutionId = Guid.NewGuid().ToString();
 
-                        await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(
-                            JsonSerializer.Serialize(new { type = "recurring_scheduled", recurringId }))),
-                            System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
-                    }
-                    else if (type == "cancel_recurring")
-                    {
-                        var recurringId = innerRoot.GetProperty("recurringId").GetString();
-                        if (!string.IsNullOrEmpty(recurringId) && _recurringExecutions.TryRemove(recurringId, out var cts))
+                                    var dependencyMap = graphMsg.Nodes.ToDictionary(
+                                        n => n.Id,
+                                        n => n.Dependencies?.ToList() ?? new List<string>()
+                                    );
+
+                                    foreach (var node in graphMsg.Nodes)
+                                    {
+                                        _logger.LogInformation("Initializing node {NodeId} with arguments: {Args}, inputs: {Inputs}, parallel: {Parallel}, times: {Times}, dependencies: {Dependencies}", node.Id, node.Args, node.Inputs, node.Parallel, node.Times, string.Join(", ", node.Dependencies ?? Enumerable.Empty<string>()));
+                                        var state = new NodeExecutionState
+                                        {
+                                            NodeId = node.Id,
+                                            Status = "pending",
+                                            Inputs = node.Inputs,
+                                            Args = node.Args,
+                                            Parallel = node.Parallel,
+                                            Times = node.Times,
+                                            Dependencies = node.Dependencies,
+                                            RetryCount = 0,
+                                            MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
+                                            TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                                        };
+                                        _nodeStates[node.Id] = state;
+                                    }
+
+                                    // Pass already parsed nodes and dependencyMap
+                                    _ = ExecuteGraphAsync(graphMsg.Nodes, dependencyMap, webSocket, mainSshDetails, _currentExecutionId);
+
+                                    var stateJson = JsonSerializer.Serialize(new { executionId = _currentExecutionId, nodes = _nodeStates.Values });
+                                    await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(stateJson)), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                                }
+                            }
+                            else if (type == "graph_restore")
+                            {
+                                var restoreMsg = JsonSerializer.Deserialize<GraphRestoreMessage>(wsMessage);
+                                if (restoreMsg?.NodeStates != null)
+                                {
+                                    foreach (var state in restoreMsg.NodeStates)
+                                    {
+                                        _nodeStates[state.NodeId] = state;
+                                    }
+                                    await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"restore_ack\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                                }
+                            }
+                            else if (type == "pause")
+                            {
+                                _isPaused = true;
+                                await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"paused\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            }
+                            else if (type == "resume")
+                            {
+                                _isPaused = false;
+                                await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"resumed\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            }
+                            else if (type == "save_state")
+                            {
+                                if (!string.IsNullOrEmpty(_currentExecutionId))
+                                    File.WriteAllText(GetPersistenceFile(_currentExecutionId), JsonSerializer.Serialize(_nodeStates.Values));
+                                await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"saved\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            }
+                            else if (type == "load_state")
+                            {
+                                var execId = innerRoot.TryGetProperty("executionId", out var execIdProp)
+                                    ? execIdProp.GetString()
+                                    : null;
+                                if (!string.IsNullOrEmpty(execId) && File.Exists(GetPersistenceFile(execId)))
+                                {
+                                    var json = File.ReadAllText(GetPersistenceFile(execId));
+                                    var states = JsonSerializer.Deserialize<List<NodeExecutionState>>(json);
+                                    if (states != null)
+                                    {
+                                        foreach (var state in states)
+                                            _nodeStates[state.NodeId] = state;
+                                    }
+                                    _currentExecutionId = execId;
+                                    await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("{\"type\":\"loaded\"}")), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                                }
+                            }
+                            else if (type == "command" && innerRoot.TryGetProperty("command", out var cmdProp) && !string.IsNullOrEmpty(cmdProp.GetString()))
+                            {
+                                var command = cmdProp.GetString();
+                                _logger.LogInformation("Executing command: {Command}", command);
+                                var cmd = sshClient.RunCommand(command);
+                                var output = cmd.Result + cmd.Error;
+                                var responseBytes = Encoding.UTF8.GetBytes(output);
+                                await webSocket.SendAsync(new ArraySegment<byte>(responseBytes), System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            }
+                            else if (type == "schedule_recurring")
+                            {
+                                var intervalSeconds = innerRoot.GetProperty("intervalSeconds").GetInt32();
+                                var nodes = innerRoot.GetProperty("nodes").Deserialize<Node[]>();
+                                var recurringId = Guid.NewGuid().ToString();
+                                var dependencyMap = nodes.ToDictionary(n => n.Id, n => n.Dependencies?.ToList() ?? new List<string>());
+                                var cts = new CancellationTokenSource();
+                                _recurringExecutions[recurringId] = cts;
+
+                                _ = Task.Run(async () =>
+                                {
+                                    while (!cts.Token.IsCancellationRequested)
+                                    {
+                                        var execId = Guid.NewGuid().ToString();
+                                        foreach (var node in nodes)
+                                        {
+                                            var state = new NodeExecutionState
+                                            {
+                                                NodeId = node.Id,
+                                                Status = "pending",
+                                                Inputs = node.Inputs,
+                                                Args = node.Args,
+                                                Parallel = node.Parallel,
+                                                Times = node.Times,
+                                                Dependencies = node.Dependencies,
+                                                RetryCount = 0,
+                                                MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
+                                                TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                                            };
+                                            _nodeStates[node.Id] = state;
+                                        }
+                                        await ExecuteGraphAsync(nodes, dependencyMap, webSocket, mainSshDetails, execId);
+                                        await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), cts.Token);
+                                    }
+                                }, cts.Token);
+
+                                await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(
+                                    JsonSerializer.Serialize(new { type = "recurring_scheduled", recurringId }))),
+                                    System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            }
+                            else if (type == "cancel_recurring")
+                            {
+                                var recurringId = innerRoot.GetProperty("recurringId").GetString();
+                                if (!string.IsNullOrEmpty(recurringId) && _recurringExecutions.TryRemove(recurringId, out var cts))
+                                {
+                                    cts.Cancel();
+                                    await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(
+                                        JsonSerializer.Serialize(new { type = "recurring_cancelled", recurringId }))),
+                                        System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                                }
+                            }
+                        }
+                        catch (Exception ex)
                         {
-                            cts.Cancel();
-                            await webSocket.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(
-                                JsonSerializer.Serialize(new { type = "recurring_cancelled", recurringId }))),
-                                System.Net.WebSockets.WebSocketMessageType.Text, true, System.Threading.CancellationToken.None);
+                            _logger.LogError(ex, "Error while handling WebSocket input.");
+                            break;
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error while handling WebSocket input.");
-                    break;
                 }
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling WebSocket connection.");
+            }
+            finally
+            {
+                if (webSocket.State == System.Net.WebSockets.WebSocketState.Open)
+                {
+                    await webSocket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, "Connection closed", System.Threading.CancellationToken.None);
+                }
+                _logger.LogInformation("WebSocket connection closed.");
+            }
         }
-    }
-    catch (Exception ex)
-    {
-        _logger.LogError(ex, "Error handling WebSocket connection.");
-    }
-    finally
-    {
-        if (webSocket.State == System.Net.WebSockets.WebSocketState.Open)
-        {
-            await webSocket.CloseAsync(System.Net.WebSockets.WebSocketCloseStatus.NormalClosure, "Connection closed", System.Threading.CancellationToken.None);
-        }
-        _logger.LogInformation("WebSocket connection closed.");
-    }
-}
-
-
-
-
-
-
-
 
         // Graph execution with dependencies, parallelism, error handling, pause/resume, progress, timeouts/retries
         private async Task ExecuteGraphAsync(Node[] nodes, Dictionary<string, List<string>> dependencyMap, System.Net.WebSockets.WebSocket webSocket, SshDetails mainSshDetails, string executionId)
@@ -568,7 +561,8 @@ private async Task HandleWebSocketConnection(System.Net.WebSockets.WebSocket web
             var progress = new
             {
                 type = "progress",
-                nodes = _nodeStates.Values.Select(s => new {
+                nodes = _nodeStates.Values.Select(s => new
+                {
                     nodeId = s.NodeId,
                     status = s.Status,
                     outputs = s.Outputs,
