@@ -64,5 +64,9 @@
       "maxRetries": 2,
       "timeoutSeconds": 10
     }
-  ]
+  ],
+  "save_restore": {
+    "enabled": true,
+    "stateFile": "node_states.json"
+  }
 }

@@ -23,7 +23,8 @@ namespace MServer.Services
             Func<NodeExecutionState, Task> onProgress,
             SshDetails mainSshDetails,
             CancellationToken cancellationToken,
-            ConcurrentDictionary<string, NodeExecutionState> sharedNodeStates = null // optional
+            ConcurrentDictionary<string, NodeExecutionState> sharedNodeStates = null, // optional
+            Func<bool> isPaused = null // <-- add this parameter
         )
         {
             var nodeStates = sharedNodeStates ?? new ConcurrentDictionary<string, NodeExecutionState>(
@@ -43,20 +44,27 @@ namespace MServer.Services
                         TimeoutSeconds = n.TimeoutSeconds
                     }));
 
-            while (nodeStates.Values.Any
-                (
-                    s => s.Status == "pending" ||
-                    s.Status == "running"
-                ))
+            while (nodeStates.Values.Any(
+                s => s.Status == "pending" ||
+                s.Status == "running"
+            ))
             {
                 foreach (var node in nodes)
                 {
                     var state = nodeStates[node.Id];
+                    // Skip nodes that are already completed or successful
+                    if (state.Status == "completed" || state.Status == "success" || state.Status == "failed")
+                        continue;
+
+                    // Pause logic: wait if paused
+                    while (isPaused != null && isPaused())
+                    {
+                        await Task.Delay(200, cancellationToken);
+                    }
+
                     if (state.Status == "pending" &&
                         (state.Dependencies == null ||
-                        state.Dependencies
-                        .All(d => nodeStates[d]
-                        .Status == "completed")))
+                        state.Dependencies.All(d => nodeStates[d].Status == "completed" || nodeStates[d].Status == "success")))
                     {
                         state.Status = "running";
                         state.StartTime = DateTime.UtcNow;

@@ -171,7 +171,8 @@ namespace MServer.Middleware
                             async state => await SendProgressAsync(webSocket, state), // node progress
                             mainSshDetails,
                             shutdownToken,
-                            _nodeStates // <-- pass the shared dictionary
+                            _nodeStates,
+                            () => _isPaused // <-- add this argument
                         );
 
                         // --- Minimal summary logic ---
@@ -279,10 +280,11 @@ namespace MServer.Middleware
                                 _ = _graphExecutor.ExecuteGraphAsync(
                                     graphMsg.Nodes.ToArray(),
                                     dependencyMap,
-                                    async state => await
-                                    SendProgressAsync(webSocket, state),
+                                    async state => await SendProgressAsync(webSocket, state),
                                     mainSshDetails,
-                                    shutdownToken
+                                    shutdownToken,
+                                    _nodeStates,
+                                    () => _isPaused // <-- add this argument
                                 );
 
                                 var stateJson = JsonSerializer.Serialize
