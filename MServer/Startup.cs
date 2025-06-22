@@ -51,9 +51,6 @@ namespace MServer
             // Register AuthModule
             services.AddSingleton<AuthModule>();
 
-            // Register payment service
-            services.AddScoped<PayService>();
-
             // Register IJwtTokenService
             services.AddScoped<IJwtTokenService, JwtTokenService>();
 
