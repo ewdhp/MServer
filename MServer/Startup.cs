@@ -42,11 +42,14 @@ namespace MServer
             // Register TokenValidationService
             services.AddSingleton<TokenValidationService>();
 
-            // Register other services as needed
             services.AddSingleton<TokenManagementService>();
             services.AddSingleton<AuditLoggingService>();
             services.AddSingleton<ErrorHandlingService>();
             services.AddSingleton<RBACService>();
+            services.AddSingleton<SshService>();
+            services.AddSingleton<GraphExecutor>();
+            services.AddSingleton<StatePersistenceService>();
+            services.AddSingleton<WebSocketMessageHandler>();
 
             // Register AuthModule
             services.AddSingleton<AuthModule>();
