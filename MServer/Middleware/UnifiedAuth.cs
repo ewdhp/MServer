@@ -402,7 +402,14 @@ namespace MServer.Middleware
             });
         }
 
-        private string GetPersistenceFile
-        (string executionId) => $"{PersistenceFile}.{executionId}.json";
+        // Add this method to generate a unique state file name per execution
+        private string GetPersistenceFile(string executionId)
+        {
+            return $"{PersistenceFile}.{executionId}.json";
+        }
+
+        // The backend generates a unique state file name for each execution:
+        // private string GetPersistenceFile(string executionId) => $"{PersistenceFile}.{executionId}.json";
+        // No need for the client to specify state file or execution ID in the config.
     }
 }
