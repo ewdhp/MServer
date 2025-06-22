@@ -29,7 +29,8 @@ namespace MServer.Middleware
         private readonly WebSocketMessageHandler _wsHandler;
 
         // Track execution state for each node by node ID
-        private readonly ConcurrentDictionary<string, NodeExecutionState> _nodeStates = new();
+        private readonly ConcurrentDictionary<string, NodeExecutionState>
+        _nodeStates = new();
 
         // Pause/Resume control
         private volatile bool _isPaused = false;
@@ -41,7 +42,8 @@ namespace MServer.Middleware
         private string _currentExecutionId = null;
 
         // Add a field to track scheduled recurring jobs
-        private readonly ConcurrentDictionary<string, CancellationTokenSource> _recurringExecutions = new();
+        private readonly ConcurrentDictionary<string, CancellationTokenSource>
+        _recurringExecutions = new();
 
         public UnifiedAuth(
             RequestDelegate next,
@@ -61,9 +63,11 @@ namespace MServer.Middleware
         {
             if (context.WebSockets.IsWebSocketRequest)
             {
-                using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
-                var shutdownToken = context.RequestAborted;
-                await HandleWebSocketConnection(webSocket, shutdownToken);
+                using var webSocket = await context
+                .WebSockets.AcceptWebSocketAsync();
+                var shutdownToken = context.RequestAborted;              
+                await HandleWebSocketConnection
+                (webSocket, shutdownToken);
             }
             else
             {
@@ -72,12 +76,14 @@ namespace MServer.Middleware
         }
 
         // Update the signature to accept a CancellationToken
-        private async Task HandleWebSocketConnection(WebSocket webSocket, CancellationToken shutdownToken)
+        private async Task HandleWebSocketConnection
+        (WebSocket webSocket, CancellationToken shutdownToken)
         {
             var buffer = new byte[1024 * 4];
             SshDetails mainSshDetails = null;
             Node[] initialNodes = null;
-            Dictionary<string, List<string>> initialDependencyMap = null;
+            Dictionary<string, List<string>>
+            initialDependencyMap = null;
             bool initialGraphExecute = false;
 
             try
@@ -87,22 +93,27 @@ namespace MServer.Middleware
                 if (string.IsNullOrWhiteSpace(message))
                 {
                     _logger.LogError("Received empty message.");
-                    await webSocket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Empty message received", CancellationToken.None);
+                    await webSocket.CloseAsync
+                    (WebSocketCloseStatus.InvalidPayloadData,
+                    "Empty message received", CancellationToken.None);
                     return;
                 }
 
                 _logger.LogInformation("Received: {Message}", message);
 
-                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
                 JsonDocument doc = JsonDocument.Parse(message);
                 JsonElement root = doc.RootElement;
 
                 // Parse repeat count (default 1)
                 int repeat = 1;
-                if (root.TryGetProperty("repeat", out var repeatProp) && repeatProp.TryGetInt32(out var repeatVal) && repeatVal > 0)
+                if (root.TryGetProperty("repeat", out var repeatProp) &&
+                repeatProp.TryGetInt32(out var repeatVal) && repeatVal > 0)
                     repeat = repeatVal;
 
-                // Parse SSH details and nodes if present
                 if (root.TryGetProperty("type", out var typeProp) &&
                     typeProp.GetString() == "graph_execute" &&
                     root.TryGetProperty("ssh", out var sshProp))
@@ -132,13 +143,13 @@ namespace MServer.Middleware
                     ("graph{Count} nodes.", initialNodes?.Length ?? 0);
                 }
 
-                if ( mainSshDetails == null ||
-                    string.IsNullOrEmpty(mainSshDetails.Host) ||
-                    string.IsNullOrEmpty(mainSshDetails.Username) ||
-                    string.IsNullOrEmpty(mainSshDetails.Password))
-                {
+                if (
+                        mainSshDetails == null ||
+                        string.IsNullOrEmpty(mainSshDetails.Host) ||
+                        string.IsNullOrEmpty(mainSshDetails.Username) ||
+                        string.IsNullOrEmpty(mainSshDetails.Password)
+                    )
                     throw new ArgumentException("Invalid SSH details");
-                }
 
                 if (initialGraphExecute && initialNodes != null)
                 {
@@ -158,8 +169,10 @@ namespace MServer.Middleware
                                 Times = node.Times,
                                 Dependencies = node.Dependencies,
                                 RetryCount = 0,
-                                MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
-                                TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                                MaxRetries = node.MaxRetries > 0 ?
+                                node.MaxRetries : 3,
+                                TimeoutSeconds = node.TimeoutSeconds > 0 ?
+                                node.TimeoutSeconds : 30
                             };
                             _nodeStates[node.Id] = state;
                         }
@@ -168,7 +181,7 @@ namespace MServer.Middleware
                         await _graphExecutor.ExecuteGraphAsync(
                             initialNodes,
                             initialDependencyMap,
-                            async state => await SendProgressAsync(webSocket, state), // node progress
+                            async state => await SendProgressAsync(webSocket, state),
                             mainSshDetails,
                             shutdownToken,
                             _nodeStates,
@@ -180,7 +193,11 @@ namespace MServer.Middleware
                         var nodeIds = nodeStates.Select(n => n.NodeId).ToArray();
                         var startTime = nodeStates.Min(n => n.StartTime);
                         var endTime = nodeStates.Max(n => n.EndTime);
-                        var errors = nodeStates.Where(n => !string.IsNullOrEmpty(n.Error)).ToList();
+
+                        var errors = nodeStates
+                            .Where(n => !string.IsNullOrEmpty(n.Error))
+                            .ToList();
+
                         string status;
                         if (nodeStates.All(n => n.Status == "completed"))
                             status = "completed";
@@ -217,8 +234,10 @@ namespace MServer.Middleware
                                     Times = node.Times,
                                     Dependencies = node.Dependencies,
                                     RetryCount = 0,
-                                    MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
-                                    TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                                    MaxRetries = node.MaxRetries > 0 ?
+                                    node.MaxRetries : 3,
+                                    TimeoutSeconds = node.TimeoutSeconds > 0 ?
+                                    node.TimeoutSeconds : 30
                                 };
                                 _nodeStates[node.Id] = state;
                             }
@@ -227,7 +246,8 @@ namespace MServer.Middleware
                 }
 
                 // Main message loop
-                while (webSocket.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
+                while (webSocket.State == WebSocketState.Open &&
+                        !shutdownToken.IsCancellationRequested)
                 {
                     try
                     {
@@ -280,7 +300,8 @@ namespace MServer.Middleware
                                 _ = _graphExecutor.ExecuteGraphAsync(
                                     graphMsg.Nodes.ToArray(),
                                     dependencyMap,
-                                    async state => await SendProgressAsync(webSocket, state),
+                                    async state => await
+                                    SendProgressAsync(webSocket, state),
                                     mainSshDetails,
                                     shutdownToken,
                                     _nodeStates,
