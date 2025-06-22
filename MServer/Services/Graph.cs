@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using MServer.Models;
+using System.Collections.Concurrent;
 
 namespace MServer.Services
 {
@@ -21,23 +22,26 @@ namespace MServer.Services
             Dictionary<string, List<string>> dependencyMap,
             Func<NodeExecutionState, Task> onProgress,
             SshDetails mainSshDetails,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ConcurrentDictionary<string, NodeExecutionState> sharedNodeStates = null // optional
+        )
         {
-            var nodeStates = nodes.ToDictionary(
-                n => n.Id,
-                n => new NodeExecutionState
-                {
-                    NodeId = n.Id,
-                    Status = "pending",
-                    Inputs = n.Inputs,
-                    Args = n.Args,
-                    Parallel = n.Parallel,
-                    Times = n.Times,
-                    Dependencies = n.Dependencies,
-                    RetryCount = 0,
-                    MaxRetries = n.MaxRetries,
-                    TimeoutSeconds = n.TimeoutSeconds
-                });
+            var nodeStates = sharedNodeStates ?? new ConcurrentDictionary<string, NodeExecutionState>(
+                nodes.ToDictionary(
+                    n => n.Id,
+                    n => new NodeExecutionState
+                    {
+                        NodeId = n.Id,
+                        Status = "pending",
+                        Inputs = n.Inputs,
+                        Args = n.Args,
+                        Parallel = n.Parallel,
+                        Times = n.Times,
+                        Dependencies = n.Dependencies,
+                        RetryCount = 0,
+                        MaxRetries = n.MaxRetries,
+                        TimeoutSeconds = n.TimeoutSeconds
+                    }));
 
             while (nodeStates.Values.Any
                 (

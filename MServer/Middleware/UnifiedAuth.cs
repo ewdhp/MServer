@@ -61,10 +61,9 @@ namespace MServer.Middleware
         {
             if (context.WebSockets.IsWebSocketRequest)
             {
-                using var webSocket = await context
-                    .WebSockets.AcceptWebSocketAsync();
-
-                await HandleWebSocketConnection(webSocket);
+                using var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+                var shutdownToken = context.RequestAborted;
+                await HandleWebSocketConnection(webSocket, shutdownToken);
             }
             else
             {
@@ -72,16 +71,14 @@ namespace MServer.Middleware
             }
         }
 
-        private async Task HandleWebSocketConnection(WebSocket webSocket)
+        // Update the signature to accept a CancellationToken
+        private async Task HandleWebSocketConnection(WebSocket webSocket, CancellationToken shutdownToken)
         {
             var buffer = new byte[1024 * 4];
             SshDetails mainSshDetails = null;
             Node[] initialNodes = null;
-            Dictionary<string, List<string>>
-            initialDependencyMap = null;
+            Dictionary<string, List<string>> initialDependencyMap = null;
             bool initialGraphExecute = false;
-            CancellationTokenSource shutdownCts = new
-            CancellationTokenSource();
 
             try
             {
@@ -90,18 +87,20 @@ namespace MServer.Middleware
                 if (string.IsNullOrWhiteSpace(message))
                 {
                     _logger.LogError("Received empty message.");
-                    await webSocket.CloseAsync
-                    (WebSocketCloseStatus.InvalidPayloadData,
-                    "Empty message received", CancellationToken.None);
+                    await webSocket.CloseAsync(WebSocketCloseStatus.InvalidPayloadData, "Empty message received", CancellationToken.None);
                     return;
                 }
 
                 _logger.LogInformation("Received: {Message}", message);
 
-                var options = new JsonSerializerOptions
-                { PropertyNameCaseInsensitive = true };
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 JsonDocument doc = JsonDocument.Parse(message);
                 JsonElement root = doc.RootElement;
+
+                // Parse repeat count (default 1)
+                int repeat = 1;
+                if (root.TryGetProperty("repeat", out var repeatProp) && repeatProp.TryGetInt32(out var repeatVal) && repeatVal > 0)
+                    repeat = repeatVal;
 
                 // Parse SSH details and nodes if present
                 if (root.TryGetProperty("type", out var typeProp) &&
@@ -143,62 +142,96 @@ namespace MServer.Middleware
 
                 if (initialGraphExecute && initialNodes != null)
                 {
-                    _currentExecutionId = Guid.NewGuid().ToString();
-
-                    foreach (var node in initialNodes)
+                    for (int i = 0; i < repeat; i++)
                     {
-                        var state = new NodeExecutionState
-                        {
-                            NodeId = node.Id,
-                            Status = "pending",
-                            Inputs = node.Inputs,
-                            Args = node.Args,
-                            Parallel = node.Parallel,
-                            Times = node.Times,
-                            Dependencies = node.Dependencies,
-                            RetryCount = 0,
-                            MaxRetries = node.MaxRetries > 0 ?
-                            node.MaxRetries : 3,
-                            TimeoutSeconds = node.TimeoutSeconds > 0 ?
-                            node.TimeoutSeconds : 30
-                        };
-                        _nodeStates[node.Id] = state;
-                    }
+                        _currentExecutionId = Guid.NewGuid().ToString();
 
-                    // Use GraphExecutor to execute the graph
-                    _ = _graphExecutor.ExecuteGraphAsync(
-                        initialNodes,
-                        initialDependencyMap,
-                        async state => await SendProgressAsync(webSocket, state),
-                        mainSshDetails,
-                        shutdownCts.Token
-                    );
-
-                    var stateJson = JsonSerializer.Serialize
-                    (
-                        new
+                        foreach (var node in initialNodes)
                         {
-                            executionId = _currentExecutionId,
-                            nodes = _nodeStates.Values
+                            var state = new NodeExecutionState
+                            {
+                                NodeId = node.Id,
+                                Status = "pending",
+                                Inputs = node.Inputs,
+                                Args = node.Args,
+                                Parallel = node.Parallel,
+                                Times = node.Times,
+                                Dependencies = node.Dependencies,
+                                RetryCount = 0,
+                                MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
+                                TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                            };
+                            _nodeStates[node.Id] = state;
                         }
-                    );
-                    await _wsHandler.SendMessageAsync
-                    (
-                        webSocket, new
-                    {
-                        type = "state",
-                        data = stateJson
-                    });
+
+                        // Use GraphExecutor to execute the graph
+                        await _graphExecutor.ExecuteGraphAsync(
+                            initialNodes,
+                            initialDependencyMap,
+                            async state => await SendProgressAsync(webSocket, state), // node progress
+                            mainSshDetails,
+                            shutdownToken,
+                            _nodeStates // <-- pass the shared dictionary
+                        );
+
+                        // --- Minimal summary logic ---
+                        var nodeStates = _nodeStates.Values.ToList();
+                        var nodeIds = nodeStates.Select(n => n.NodeId).ToArray();
+                        var startTime = nodeStates.Min(n => n.StartTime);
+                        var endTime = nodeStates.Max(n => n.EndTime);
+                        var errors = nodeStates.Where(n => !string.IsNullOrEmpty(n.Error)).ToList();
+                        string status;
+                        if (nodeStates.All(n => n.Status == "completed"))
+                            status = "completed";
+                        else if (nodeStates.All(n => n.Status == "failed"))
+                            status = "failed";
+                        else
+                            status = "partial";
+
+                        var summary = new
+                        {
+                            type = "summary",
+                            executionId = _currentExecutionId,
+                            nodeIds,
+                            startTime,
+                            endTime,
+                            repeat = i + 1,
+                            error = errors.FirstOrDefault()?.Error,
+                            status
+                        };
+                        await _wsHandler.SendMessageAsync(webSocket, summary);
+
+                        // Only reset node states if another repeat is coming
+                        if (i < repeat - 1)
+                        {
+                            foreach (var node in initialNodes)
+                            {
+                                var state = new NodeExecutionState
+                                {
+                                    NodeId = node.Id,
+                                    Status = "pending",
+                                    Inputs = node.Inputs,
+                                    Args = node.Args,
+                                    Parallel = node.Parallel,
+                                    Times = node.Times,
+                                    Dependencies = node.Dependencies,
+                                    RetryCount = 0,
+                                    MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
+                                    TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
+                                };
+                                _nodeStates[node.Id] = state;
+                            }
+                        }
+                    }
                 }
 
                 // Main message loop
-                while (webSocket.State == WebSocketState.Open &&
-                !shutdownCts.IsCancellationRequested)
+                while (webSocket.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
                 {
                     try
                     {
-                        var wsMessage = await _wsHandler
-                        .ReceiveMessageAsync(webSocket);
+                        // Pass shutdownToken to ReceiveMessageAsync
+                        var wsMessage = await _wsHandler.ReceiveMessageAsync(webSocket);
                         if (string.IsNullOrWhiteSpace(wsMessage))
                             continue;
 
@@ -249,7 +282,7 @@ namespace MServer.Middleware
                                     async state => await
                                     SendProgressAsync(webSocket, state),
                                     mainSshDetails,
-                                    shutdownCts.Token
+                                    shutdownToken
                                 );
 
                                 var stateJson = JsonSerializer.Serialize

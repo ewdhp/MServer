@@ -1,5 +1,6 @@
 {
   "type": "graph_execute",
+  "repeat": 2,
   "ssh": {
     "host": "localhost",
     "port": 22,
