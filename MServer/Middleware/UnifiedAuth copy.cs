@@ -61,8 +61,6 @@ namespace MServer.Middleware
             Dictionary<string, List<string>> initialDependencyMap = null;
             bool initialGraphExecute = false;
 
-            System.Net.WebSockets.WebSocketReceiveResult result = null;
-
             CancellationTokenSource shutdownCts = new CancellationTokenSource();
             AppDomain.CurrentDomain.ProcessExit += (s, e) => shutdownCts.Cancel();
             Console.CancelKeyPress += (s, e) => { shutdownCts.Cancel(); e.Cancel = false; };
@@ -70,8 +68,8 @@ namespace MServer.Middleware
             try
             {
                 // Receive the first message (could be SSH details or all-in-one graph_execute)
-                result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), System.Threading.CancellationToken.None);
-                var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                var receiveResult = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), System.Threading.CancellationToken.None);
+                var message = Encoding.UTF8.GetString(buffer, 0, receiveResult.Count);
 
                 if (string.IsNullOrWhiteSpace(message))
                 {
@@ -189,14 +187,14 @@ namespace MServer.Middleware
                     }
 
                     // Handle WebSocket input and forward it to the SSH shell
-                    while (webSocket.State == System.Net.WebSockets.WebSocketState.Open && (result == null || !result.CloseStatus.HasValue) && !shutdownCts.IsCancellationRequested)
+                    while (webSocket.State == System.Net.WebSockets.WebSocketState.Open && !shutdownCts.IsCancellationRequested)
                     {
                         _logger.LogInformation("Waiting for WebSocket input...");
                         try
                         {
                             var receiveTask = webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), shutdownCts.Token);
-                            result = await receiveTask;
-                            var wsMessage = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                            var receiveResultLoop = await receiveTask;
+                            var wsMessage = Encoding.UTF8.GetString(buffer, 0, receiveResultLoop.Count);
                             if (string.IsNullOrWhiteSpace(wsMessage))
                             {
                                 continue;
