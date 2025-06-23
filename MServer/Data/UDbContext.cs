@@ -18,7 +18,7 @@ namespace MServer.Data
         {
             var configuration = new ConfigurationBuilder()
                 .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json")
+                .AddJsonFile("appSettings.json")
                 .Build();
 
             var optionsBuilder = new 
@@ -47,8 +47,8 @@ namespace MServer.Data
         OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.HasDefaultSchema("marketing");
-            modelBuilder.Entity<User>().ToTable("Users");
+            modelBuilder.HasDefaultSchema("mserver");
+            modelBuilder.Entity<User>().ToTable("User");
         }
 
         public override int SaveChanges()

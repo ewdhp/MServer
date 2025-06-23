@@ -18,7 +18,7 @@ namespace MServer.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasDefaultSchema("marketing")
+                .HasDefaultSchema("mserver")
                 .HasAnnotation("ProductVersion", "9.0.3")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
@@ -55,7 +55,7 @@ namespace MServer.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users", "marketing");
+                    b.ToTable("User", "mserver");
                 });
 #pragma warning restore 612, 618
         }

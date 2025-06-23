@@ -13,11 +13,11 @@ namespace MServer.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.EnsureSchema(
-                name: "marketing");
+                name: "mserver");
 
             migrationBuilder.CreateTable(
-                name: "Users",
-                schema: "marketing",
+                name: "User",
+                schema: "mserver",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -30,7 +30,7 @@ namespace MServer.Migrations
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Users", x => x.Id);
+                    table.PrimaryKey("PK_User", x => x.Id);
                 });
         }
 
@@ -38,8 +38,8 @@ namespace MServer.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "Users",
-                schema: "marketing");
+                name: "User",
+                schema: "mserver");
         }
     }
 }
