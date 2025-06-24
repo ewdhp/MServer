@@ -4,6 +4,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using MServer.Models;
+using Microsoft.Extensions.Configuration;
 
 namespace MServer.Services.Auth
 {
@@ -14,12 +15,12 @@ namespace MServer.Services.Auth
 
         public TokenManagementService
         (IAuditLoggingService auditLoggingService,
-            string secretKey)
+         IConfiguration configuration)
         {
-            this.secretKey = secretKey ??
-            throw new ArgumentNullException(nameof(secretKey));
+            this.secretKey = configuration["Jwt:Key"] ??
+                throw new ArgumentNullException("Jwt:Key is missing in configuration.");
             this.auditLoggingService = auditLoggingService ??
-            throw new ArgumentNullException(nameof(auditLoggingService));
+                throw new ArgumentNullException(nameof(auditLoggingService));
         }
 
         public string IssueToken(User user)

@@ -37,7 +37,7 @@ namespace MServer
                 options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
 
             services.AddScoped<JwtTokenService>();
-            services.AddScoped<FingerprintService>();
+            services.AddSingleton<FingerprintService>();
 
             // Register TokenValidationService
             services.AddSingleton<TokenValidationService>();
@@ -50,7 +50,7 @@ namespace MServer
             services.AddSingleton<GraphExecutor>();
             services.AddSingleton<StatePersistenceService>();
             services.AddSingleton<WebSocketMessageHandler>();
-
+            services.AddSingleton<IAuditLoggingService, AuditLoggingService>();
             // Register AuthModule
             services.AddSingleton<AuthModule>();
 
@@ -59,7 +59,7 @@ namespace MServer
 
             // Register IUCService and IHttpContextAccessor
             services.AddHttpContextAccessor();
-            services.AddScoped<IUCService, UserContextService>();
+            services.AddSingleton<IUCService, UserContextService>();
 
             // Register HttpClient
             services.AddHttpClient();

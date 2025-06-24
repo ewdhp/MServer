@@ -26,8 +26,7 @@ namespace MServer.Services.Auth
             tokenValidationService = new
             TokenValidationService(configuration);
             tokenManagementService = new TokenManagementService
-            (auditLoggingService,
-            configuration["TokenManagement:SecretKey"]);
+            (auditLoggingService, configuration);
             rbacService = new RBACService();
         }
 
