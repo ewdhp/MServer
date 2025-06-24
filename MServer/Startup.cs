@@ -36,12 +36,8 @@ namespace MServer
             services.AddDbContext<UDbContext>(options =>
                 options.UseNpgsql(Configuration.GetConnectionString("DefaultConnection")));
 
-            services.AddScoped<JwtTokenService>();
-            services.AddSingleton<FingerprintService>();
-
             // Register TokenValidationService
             services.AddSingleton<TokenValidationService>();
-
             services.AddSingleton<TokenManagementService>();
             services.AddSingleton<AuditLoggingService>();
             services.AddSingleton<ErrorHandlingService>();
@@ -121,6 +117,8 @@ namespace MServer
             // Register FileWatcherService and CleanupBackgroundService
             services.AddSingleton<FileWatcherService>();
             services.AddHostedService<CleanupBackgroundService>();
+
+            services.AddSingleton<FingerprintService>();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)

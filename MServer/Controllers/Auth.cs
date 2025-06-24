@@ -6,6 +6,7 @@ using MServer.Data;
 using MServer.Models;
 using System;
 using System.Linq;
+using MServer.Services.Auth;
 
 
 namespace MServer.Controllers
@@ -16,20 +17,27 @@ namespace MServer.Controllers
     {
         private readonly UDbContext _context;
         private readonly ILogger<AuthController> _logger;
-        private readonly IJwtTokenService _jwtTkService;
-        private readonly FingerprintService _fpService;
+        private readonly TokenManagementService _tokenManagementService;
+        private readonly TokenValidationService _tokenValidationService;
+        private readonly AuditLoggingService _auditLoggingService;
+        private readonly ErrorHandlingService _errorHandlingService;
 
         public AuthController
         (
             UDbContext context,
             ILogger<AuthController> logger,
-            IJwtTokenService jwtTkService,
-            FingerprintService fpService)
+            TokenManagementService tokenManagementService,
+            TokenValidationService tokenValidationService,
+            AuditLoggingService auditLoggingService,
+            ErrorHandlingService errorHandlingService
+        )
         {
             _context = context;
             _logger = logger;
-            _jwtTkService = jwtTkService;
-            _fpService = fpService;
+            _tokenManagementService = tokenManagementService;
+            _tokenValidationService = tokenValidationService;
+            _auditLoggingService = auditLoggingService;
+            _errorHandlingService = errorHandlingService;
         }
 
         [HttpPost("send")]
@@ -57,27 +65,22 @@ namespace MServer.Controllers
 
             if (!ModelState.IsValid)
             {
-                return BadRequest
-                (new { message = "Invalid request model" });
+                return BadRequest(new { message = "Invalid request model" });
             }
 
             if (request.Code != "123456")
             {
-                return BadRequest
-                (new { message = "Invalid code" });
+                return BadRequest(new { message = "Invalid code" });
             }
 
             try
             {
-                var existingUser = _context.Users.FirstOrDefault
-                    (u => u.Phone == request.Phone);
-                var fingerprint = _fpService
-                    .GenerateFingerprint(HttpContext);
+                var existingUser = _context.Users.FirstOrDefault(u => u.Phone == request.Phone);
 
                 if (existingUser != null)
                 {
-                    var newToken = _jwtTkService.GenerateJwtToken
-                    (existingUser.Phone, fingerprint);
+                    var newToken = _tokenManagementService.IssueToken(existingUser);
+                    _auditLoggingService.LogAuthenticationAttempt(existingUser.Id, true, new { Phone = existingUser.Phone });
 
                     return Ok(new
                     {
@@ -97,12 +100,10 @@ namespace MServer.Controllers
                 _context.Users.Add(newUser);
                 _context.SaveChanges();
 
-                var newUserToken = _jwtTkService
-                .GenerateJwtToken(newUser.Phone, fingerprint);
+                var newUserToken = _tokenManagementService.IssueToken(newUser);
+                _auditLoggingService.LogAuthenticationAttempt(newUser.Id, true, new { Phone = newUser.Phone });
 
-                _logger.LogInformation
-                ("Signup successful for user: {Phone}",
-                request.Phone);
+                _logger.LogInformation("Signup successful for user: {Phone}", request.Phone);
 
                 return Ok(new
                 {
@@ -114,27 +115,35 @@ namespace MServer.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error during verification");
-                return StatusCode
-                (StatusCodes.Status500InternalServerError,
-                new { message = "Internal server error" });
+                return StatusCode(StatusCodes.Status500InternalServerError, new { message = "Internal server error" });
             }
         }
 
         [HttpGet("login-providers")]
         public IActionResult GetLoginProviders()
         {
-            var phone = HttpContext.User.Claims.FirstOrDefault
-            (c => c.Type == "PhoneNumber")?.Value;
-            if (string.IsNullOrEmpty(phone))
+            // Example: Use Authorization header and TokenValidationService to get claims
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            var token = authHeader?.Split(' ').Last();
+            if (string.IsNullOrEmpty(token))
             {
-                _logger.LogWarning
-                ("Phone number not found in token");
-                return Unauthorized
-                (new { message = "Unauthorized access" });
+                return Unauthorized(new { message = "Unauthorized access" });
             }
 
-            var user = _context.Users
-            .FirstOrDefault(u => u.Phone == phone);
+            var validation = _tokenValidationService.ValidateToken(token);
+            if (!validation.IsValid)
+            {
+                return Unauthorized(new { message = "Invalid token" });
+            }
+
+            var phone = validation.Claims?.Claims.FirstOrDefault(c => c.Type == "phone")?.Value;
+            if (string.IsNullOrEmpty(phone))
+            {
+                _logger.LogWarning("Phone number not found in token");
+                return Unauthorized(new { message = "Unauthorized access" });
+            }
+
+            var user = _context.Users.FirstOrDefault(u => u.Phone == phone);
             if (user == null)
             {
                 return NotFound(new { message = "User not found" });
@@ -144,31 +153,37 @@ namespace MServer.Controllers
         }
 
         [HttpPost("add-login-provider")]
-        public IActionResult AddLoginProvider
-        ([FromBody] LoginProviderReq request)
+        public IActionResult AddLoginProvider([FromBody] LoginProviderReq request)
         {
-            var phone = HttpContext.User.Claims
-            .FirstOrDefault(c => c.Type == "PhoneNumber")?.Value;
-            if (string.IsNullOrEmpty(phone))
+            var authHeader = Request.Headers["Authorization"].FirstOrDefault();
+            var token = authHeader?.Split(' ').Last();
+            if (string.IsNullOrEmpty(token))
             {
-                _logger.LogWarning
-                ("Phone number not found");
-                return Unauthorized
-                (new { message = "Unauthorized access" });
+                return Unauthorized(new { message = "Unauthorized access" });
             }
 
-            var user = _context.Users
-            .FirstOrDefault(u => u.Phone == phone);
+            var validation = _tokenValidationService.ValidateToken(token);
+            if (!validation.IsValid)
+            {
+                return Unauthorized(new { message = "Invalid token" });
+            }
+
+            var phone = validation.Claims?.Claims.FirstOrDefault(c => c.Type == "phone")?.Value;
+            if (string.IsNullOrEmpty(phone))
+            {
+                _logger.LogWarning("Phone number not found");
+                return Unauthorized(new { message = "Unauthorized access" });
+            }
+
+            var user = _context.Users.FirstOrDefault(u => u.Phone == phone);
             if (user == null)
             {
-                return NotFound
-                (new { message = "User not found" });
+                return NotFound(new { message = "User not found" });
             }
 
             if (user.LoginProviders.Contains(request.Provider))
             {
-                return BadRequest
-                (new { message = "Provider already exists" });
+                return BadRequest(new { message = "Provider already exists" });
             }
 
             user.LoginProviders.Add(request.Provider);
