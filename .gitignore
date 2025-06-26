@@ -1,6 +1,8 @@
 # Build output directories
 bin/
 obj/
+MServer/bin/
+MServer/obj/
 
 # User-specific files
 *.user
@@ -9,6 +11,7 @@ obj/
 *.vspx
 *.vspf
 *.vspcc
+*.pfx
 
 # Visual Studio related files
 .vscode/
@@ -18,6 +21,7 @@ obj/
 *.log
 *.tmp
 *.bak
+MServer/server.log
 
 # Package dependencies
 node_modules/
