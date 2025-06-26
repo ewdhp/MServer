@@ -23,3 +23,5 @@ ENV ASPNETCORE_ENVIRONMENT=Development
 
 # Use dotnet watch for live reload in development and log output to a file
 CMD ["sh", "-c", "dotnet watch run --urls http://0.0.0.0:5000;http://0.0.0.0:5001 2>&1 | tee /app/MServer/server.log"]
+
+COPY aspnetapp.pfx /https/aspnetapp.pfx
