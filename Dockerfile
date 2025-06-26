@@ -9,6 +9,7 @@ RUN dotnet restore ./MServer/MServer.csproj
 
 # Copy the rest of the source code
 COPY MServer/ ./MServer/
+COPY MServer/appSettings.json ./MServer/
 
 # Set working directory for the app
 WORKDIR /app/MServer

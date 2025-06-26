@@ -39,8 +39,12 @@ namespace MServer
                     webBuilder.ConfigureKestrel((context, serverOptions) =>
                     {
                         serverOptions.Configure(context.Configuration.GetSection("Kestrel"));
+                        serverOptions.ListenAnyIP(5001, listenOptions =>
+                        {
+                            listenOptions.UseHttps("/https/aspnetapp.pfx", "admin");
+                        });
                     });
-                    webBuilder.UseUrls("http://localhost:5000", "http://localhost:5001");
+                    webBuilder.UseUrls("http://localhost:5000", "https://localhost:5001");
                 });
     }
 }
