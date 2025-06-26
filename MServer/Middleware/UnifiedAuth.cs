@@ -45,6 +45,9 @@ namespace MServer.Middleware
         private readonly ConcurrentDictionary<string, CancellationTokenSource>
         _recurringExecutions = new();
 
+        // Add this field to track the current execution's cancellation token source
+        private CancellationTokenSource _currentExecutionCts = null;
+
         public UnifiedAuth(
             RequestDelegate next,
             ILogger<UnifiedAuth> logger,
@@ -251,7 +254,6 @@ namespace MServer.Middleware
                 {
                     try
                     {
-                        // Pass shutdownToken to ReceiveMessageAsync
                         var wsMessage = await _wsHandler.ReceiveMessageAsync(webSocket);
                         if (string.IsNullOrWhiteSpace(wsMessage))
                             continue;
@@ -266,6 +268,13 @@ namespace MServer.Middleware
 
                         if (type == "graph_execute")
                         {
+                            // Cancel any previous execution
+                            _currentExecutionCts?.Cancel();
+                            _currentExecutionCts = new CancellationTokenSource();
+
+                            // Optionally clear _nodeStates to avoid interference
+                            _nodeStates.Clear();
+
                             var graphMsg = JsonSerializer.Deserialize
                             <MServer.Models.GraphExecuteMessage>(wsMessage);
                             if (graphMsg?.Nodes != null)
@@ -297,17 +306,65 @@ namespace MServer.Middleware
                                     _nodeStates[node.Id] = state;
                                 }
 
-                                _ = _graphExecutor.ExecuteGraphAsync(
+                                // Combine shutdownToken and execution token
+                                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+                                    shutdownToken, _currentExecutionCts.Token);
+
+                                await _graphExecutor.ExecuteGraphAsync(
                                     graphMsg.Nodes.ToArray(),
                                     dependencyMap,
-                                    async state => await
-                                    SendProgressAsync(webSocket, state),
+                                    async state =>
+                                    {
+                                        try
+                                        {
+                                            _logger.LogInformation("Progress for node {NodeId}: {Status}", state.NodeId, state.Status);
+                                            await SendProgressAsync(webSocket, state);
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogError(ex, "Error in progress callback for node {NodeId}", state.NodeId);
+                                        }
+                                    },
                                     mainSshDetails,
-                                    shutdownToken,
+                                    linkedCts.Token,
                                     _nodeStates,
-                                    () => _isPaused // <-- add this argument
+                                    () => _isPaused
                                 );
 
+                                _logger.LogInformation("Completed graph_execute execution: {ExecutionId}", _currentExecutionId);
+
+                                // --- Minimal summary logic (same as initial execution) ---
+                                var nodeStates = _nodeStates.Values.ToList();
+                                var nodeIds = nodeStates.Select(n => n.NodeId).ToArray();
+                                var startTime = nodeStates.Min(n => n.StartTime);
+                                var endTime = nodeStates.Max(n => n.EndTime);
+
+                                var errors = nodeStates
+                                    .Where(n => !string.IsNullOrEmpty(n.Error))
+                                    .ToList();
+
+                                string status;
+                                if (nodeStates.All(n => n.Status == "completed"))
+                                    status = "completed";
+                                else if (nodeStates.All(n => n.Status == "failed"))
+                                    status = "failed";
+                                else
+                                    status = "partial";
+
+                                var summary = new
+                                {
+                                    type = "summary",
+                                    executionId = _currentExecutionId,
+                                    nodeIds,
+                                    startTime,
+                                    endTime,
+                                    repeat = 1,
+                                    error = errors.FirstOrDefault()?.Error,
+                                    status
+                                };
+                                await _wsHandler.SendMessageAsync(webSocket, summary);
+
+                                // Optionally, send state after summary
                                 var stateJson = JsonSerializer.Serialize
                                 (new
                                 {
@@ -362,11 +419,17 @@ namespace MServer.Middleware
                                 (webSocket, new { type = "loaded" });
                             }
                         }
+                        else if (type == "cancel")
+                        {
+                            _logger.LogInformation("Cancelling current execution: {ExecutionId}", _currentExecutionId);
+                            _currentExecutionCts?.Cancel();
+                            await _wsHandler.SendMessageAsync(webSocket, new { type = "cancelled", executionId = _currentExecutionId });
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error handling WS input.");
-                        break;
+                        await SendErrorAsync(webSocket, ex.ToString());
                     }
                 }
             }
@@ -400,6 +463,23 @@ namespace MServer.Middleware
                 type = "progress",
                 data = state
             });
+        }
+
+        // Add this helper to send error messages to the client
+        private async Task SendErrorAsync(WebSocket webSocket, string error)
+        {
+            try
+            {
+                await _wsHandler.SendMessageAsync(webSocket, new
+                {
+                    type = "error",
+                    message = error
+                });
+            }
+            catch
+            {
+                // Ignore errors while sending error messages
+            }
         }
 
         // Add this method to generate a unique state file name per execution

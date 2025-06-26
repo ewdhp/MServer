@@ -2,7 +2,7 @@
   "type": "graph_execute",
   "repeat": 2,
   "ssh": {
-    "host": "localhost",
+    "host": "host.docker.internal",
     "port": 22,
     "username": "ewd",
     "password": "2020"
@@ -11,7 +11,7 @@
     {
       "id": "node1",
       "inputs": {
-        "host": "localhost",
+        "host": "host.docker.internal",
         "username": "ewd",
         "password": "2020"
       },
@@ -25,7 +25,7 @@
     {
       "id": "node2",
       "inputs": {
-        "host": "localhost",
+        "host": "host.docker.internal",
         "username": "ewd",
         "password": "2020"
       },
@@ -39,7 +39,7 @@
     {
       "id": "node3",
       "inputs": {
-        "host": "localhost",
+        "host": "host.docker.internal",
         "username": "ewd",
         "password": "2020"
       },
@@ -53,7 +53,7 @@
     {
       "id": "node4",
       "inputs": {
-        "host": "localhost",
+        "host": "host.docker.internal",
         "username": "ewd",
         "password": "2020"
       },

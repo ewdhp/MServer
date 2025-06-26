@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  app:
+    image: mserver-dev
+    container_name: mserver-dev-container
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000-5001:5000-5001"
+    volumes:
+      - ./MServer:/app/MServer
+      - nuget-cache:/root/.nuget/packages
+    working_dir: /app/MServer
+    command: dotnet watch run --urls http://0.0.0.0:5000;http://0.0.0.0:5001
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+volumes:
+  nuget-cache:
