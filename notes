@@ -1,0 +1,14 @@
+if you are using auto reload (e.g., dotnet watch run) with a volume mount for your code, you do not need to rebuild the Docker image for code changes.
+The container will pick up code changes automatically from your host.
+
+You only need to rebuild and push the image if:
+
+You change the Dockerfile.
+You want to update the image on Docker Hub.
+You want to deploy your changes to another environment.
+Summary:
+
+For local development with hot reload and volume mounts: No image rebuild needed for code changes.
+For Dockerfile or dependency changes, or to update Docker Hub: Rebuild and push the image.
+
+-Update pwd to find current working dir
