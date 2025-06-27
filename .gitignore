@@ -48,3 +48,5 @@ secrets.json
 # Azure and Docker artifacts
 .azure/
 docker-compose.override.yml
+
+package-lock.json
