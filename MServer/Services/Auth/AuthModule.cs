@@ -46,7 +46,7 @@ namespace MServer.Services.Auth
                     .AcceptWebSocketAsync(null);
                     var token = context.Request
                     .Headers["Authorization"];
-                    await HandleWebSocketConnection
+                    await WSCHandler
                     (wsContext.WebSocket, token);
                 }
                 else
@@ -57,7 +57,7 @@ namespace MServer.Services.Auth
             }
         }
 
-        private async Task HandleWebSocketConnection
+        private async Task WSCHandler
         (WebSocket socket, string token)
         {
             var workflow = new WebSocketWorkflow(

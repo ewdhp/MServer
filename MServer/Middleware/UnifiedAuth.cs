@@ -66,11 +66,11 @@ namespace MServer.Middleware
         {
             if (context.WebSockets.IsWebSocketRequest)
             {
-                using var webSocket = await context
+                using var ws = await context
                 .WebSockets.AcceptWebSocketAsync();
-                var shutdownToken = context.RequestAborted;              
-                await HandleWebSocketConnection
-                (webSocket, shutdownToken);
+                var sdTkn = context.RequestAborted;              
+                await WSCHandler
+                (ws, sdTkn);
             }
             else
             {
@@ -79,8 +79,7 @@ namespace MServer.Middleware
         }
 
         // Update the signature to accept a CancellationToken
-        private async Task HandleWebSocketConnection
-        (WebSocket webSocket, CancellationToken shutdownToken)
+        private async Task WSCHandler(WebSocket ws,CancellationToken sdTkn)
         {
             var buffer = new byte[1024 * 4];
             SshDetails mainSshDetails = null;
@@ -92,11 +91,11 @@ namespace MServer.Middleware
             try
             {
                 // Receive the first message
-                var message = await _wsHandler.ReceiveMessageAsync(webSocket);
+                var message = await _wsHandler.ReceiveMessageAsync(ws);
                 if (string.IsNullOrWhiteSpace(message))
                 {
                     _logger.LogError("Received empty message.");
-                    await webSocket.CloseAsync
+                    await ws.CloseAsync
                     (WebSocketCloseStatus.InvalidPayloadData,
                     "Empty message received", CancellationToken.None);
                     return;
@@ -131,7 +130,7 @@ namespace MServer.Middleware
                     };
 
                     if (root.TryGetProperty("nodes", out var nodesProp) &&
-                    nodesProp.ValueKind == JsonValueKind.Array)
+                        nodesProp.ValueKind == JsonValueKind.Array)
                     {
                         initialGraphExecute = true;
                         initialNodes = JsonSerializer.Deserialize
@@ -142,8 +141,7 @@ namespace MServer.Middleware
                             new List<string>()
                         );
                     }
-                    _logger.LogInformation
-                    ("graph{Count} nodes.", initialNodes?.Length ?? 0);
+                    _logger.LogInformation("graph{Count} nodes.", initialNodes?.Length ?? 0);
                 }
 
                 if (
@@ -184,9 +182,10 @@ namespace MServer.Middleware
                         await _graphExecutor.ExecuteGraphAsync(
                             initialNodes,
                             initialDependencyMap,
-                            async state => await SendProgressAsync(webSocket, state),
+                            async state => await
+                            SendProgressAsync(ws, state),
                             mainSshDetails,
-                            shutdownToken,
+                            sdTkn,
                             _nodeStates,
                             () => _isPaused // <-- add this argument
                         );
@@ -220,7 +219,7 @@ namespace MServer.Middleware
                             error = errors.FirstOrDefault()?.Error,
                             status
                         };
-                        await _wsHandler.SendMessageAsync(webSocket, summary);
+                        await _wsHandler.SendMessageAsync(ws, summary);
 
                         // Only reset node states if another repeat is coming
                         if (i < repeat - 1)
@@ -249,12 +248,12 @@ namespace MServer.Middleware
                 }
 
                 // Main message loop
-                while (webSocket.State == WebSocketState.Open &&
-                        !shutdownToken.IsCancellationRequested)
+                while (ws.State == WebSocketState.Open &&
+                        !sdTkn.IsCancellationRequested)
                 {
                     try
                     {
-                        var wsMessage = await _wsHandler.ReceiveMessageAsync(webSocket);
+                        var wsMessage = await _wsHandler.ReceiveMessageAsync(ws);
                         if (string.IsNullOrWhiteSpace(wsMessage))
                             continue;
 
@@ -306,9 +305,9 @@ namespace MServer.Middleware
                                     _nodeStates[node.Id] = state;
                                 }
 
-                                // Combine shutdownToken and execution token
+                                // Combine sdTkn and execution token
                                 using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
-                                    shutdownToken, _currentExecutionCts.Token);
+                                    sdTkn, _currentExecutionCts.Token);
 
                                 await _graphExecutor.ExecuteGraphAsync(
                                     graphMsg.Nodes.ToArray(),
@@ -318,7 +317,7 @@ namespace MServer.Middleware
                                         try
                                         {
                                             _logger.LogInformation("Progress for node {NodeId}: {Status}", state.NodeId, state.Status);
-                                            await SendProgressAsync(webSocket, state);
+                                            await SendProgressAsync(ws, state);
                                         }
                                         catch (Exception ex)
                                         {
@@ -362,7 +361,7 @@ namespace MServer.Middleware
                                     error = errors.FirstOrDefault()?.Error,
                                     status
                                 };
-                                await _wsHandler.SendMessageAsync(webSocket, summary);
+                                await _wsHandler.SendMessageAsync(ws, summary);
 
                                 // Optionally, send state after summary
                                 var stateJson = JsonSerializer.Serialize
@@ -373,7 +372,7 @@ namespace MServer.Middleware
                                 });
                                 await _wsHandler.SendMessageAsync
                                 (
-                                    webSocket,
+                                    ws,
                                     new { type = "state", data = stateJson }
                                 );
                             }
@@ -382,13 +381,13 @@ namespace MServer.Middleware
                         {
                             _isPaused = true;
                             await _wsHandler.SendMessageAsync
-                            (webSocket, new { type = "paused" });
+                            (ws, new { type = "paused" });
                         }
                         else if (type == "resume")
                         {
                             _isPaused = false;
                             await _wsHandler.SendMessageAsync
-                            (webSocket, new { type = "resumed" });
+                            (ws, new { type = "resumed" });
                         }
                         else if (type == "save_state")
                         {
@@ -400,7 +399,7 @@ namespace MServer.Middleware
                                 (GetPersistenceFile(_currentExecutionId), dict);
                             }
                             await _wsHandler.SendMessageAsync
-                            (webSocket, new { type = "saved" });
+                            (ws, new { type = "saved" });
                         }
                         else if (type == "load_state")
                         {
@@ -416,20 +415,20 @@ namespace MServer.Middleware
                                     _nodeStates[kv.Key] = kv.Value;
                                 _currentExecutionId = execId;
                                 await _wsHandler.SendMessageAsync
-                                (webSocket, new { type = "loaded" });
+                                (ws, new { type = "loaded" });
                             }
                         }
                         else if (type == "cancel")
                         {
                             _logger.LogInformation("Cancelling current execution: {ExecutionId}", _currentExecutionId);
                             _currentExecutionCts?.Cancel();
-                            await _wsHandler.SendMessageAsync(webSocket, new { type = "cancelled", executionId = _currentExecutionId });
+                            await _wsHandler.SendMessageAsync(ws, new { type = "cancelled", executionId = _currentExecutionId });
                         }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex, "Error handling WS input.");
-                        await SendErrorAsync(webSocket, ex.ToString());
+                        await SendErrorAsync(ws, ex.ToString());
                     }
                 }
             }
@@ -439,9 +438,9 @@ namespace MServer.Middleware
             }
             finally
             {
-                if (webSocket.State == WebSocketState.Open)
+                if (ws.State == WebSocketState.Open)
                 {
-                    await webSocket.CloseAsync
+                    await ws.CloseAsync
                     (WebSocketCloseStatus.NormalClosure,
                     "Connection closed", CancellationToken.None);
                 }
@@ -450,7 +449,7 @@ namespace MServer.Middleware
         }
 
         private async Task SendProgressAsync
-        (WebSocket webSocket, NodeExecutionState state)
+        (WebSocket ws, NodeExecutionState state)
         {
             if (state.Error != null && state.Error
                 .Contains("Connection refused",
@@ -458,7 +457,7 @@ namespace MServer.Middleware
             {
                 state.Error = "SSH connection failed";
             }
-            await _wsHandler.SendMessageAsync(webSocket, new
+            await _wsHandler.SendMessageAsync(ws, new
             {
                 type = "progress",
                 data = state
@@ -466,11 +465,11 @@ namespace MServer.Middleware
         }
 
         // Add this helper to send error messages to the client
-        private async Task SendErrorAsync(WebSocket webSocket, string error)
+        private async Task SendErrorAsync(WebSocket ws, string error)
         {
             try
             {
-                await _wsHandler.SendMessageAsync(webSocket, new
+                await _wsHandler.SendMessageAsync(ws, new
                 {
                     type = "error",
                     message = error
