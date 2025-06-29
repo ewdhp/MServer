@@ -7,15 +7,16 @@ namespace MServer.Models
     {
         public string Id { get; set; }
         public object Inputs { get; set; }
-        public string Args { get; set; }
+        public object Args { get; set; } // Can be string or string[]
+        public string Script { get; set; } // Script file name (e.g., node1.sh)
         public bool Parallel { get; set; }
         public int Times { get; set; }
-        public IEnumerable<string> Dependencies { get; set; }
+        public List<string> Dependencies { get; set; }
         public int MaxRetries { get; set; }
         public int TimeoutSeconds { get; set; }
     }
 
-    public class NodeExecutionState
+    public class execState
     {
         public string NodeId { get; set; }
         public string Status { get; set; }

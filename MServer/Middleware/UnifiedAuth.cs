@@ -8,7 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
-using MServer.Models;
+using MServer.Models; // <-- Ensure this is present
 using MServer.Services;
 
 namespace MServer.Middleware
@@ -29,7 +29,7 @@ namespace MServer.Middleware
         private readonly WebSocketMessageHandler _wsHandler;
 
         // Track execution state for each node by node ID
-        private readonly ConcurrentDictionary<string, NodeExecutionState>
+        private readonly ConcurrentDictionary<string, execState>
         _nodeStates = new();
 
         // Pause/Resume control
@@ -136,9 +136,8 @@ namespace MServer.Middleware
                         initialNodes = JsonSerializer.Deserialize
                         <Node[]>(nodesProp.GetRawText(), options);
                         initialDependencyMap = initialNodes.ToDictionary(
-                            n => n.Id,
-                            n => n.Dependencies?.ToList() ??
-                            new List<string>()
+                            n => (string)n.Id,
+                            n => n.Dependencies?.ToList() ?? new List<string>()
                         );
                     }
                     _logger.LogInformation("graph{Count} nodes.", initialNodes?.Length ?? 0);
@@ -160,12 +159,12 @@ namespace MServer.Middleware
 
                         foreach (var node in initialNodes)
                         {
-                            var state = new NodeExecutionState
+                            var state = new execState
                             {
-                                NodeId = node.Id,
+                                NodeId = node.Id as string,
                                 Status = "pending",
                                 Inputs = node.Inputs,
-                                Args = node.Args,
+                                Args = node.Args as string,
                                 Parallel = node.Parallel,
                                 Times = node.Times,
                                 Dependencies = node.Dependencies,
@@ -175,15 +174,13 @@ namespace MServer.Middleware
                                 TimeoutSeconds = node.TimeoutSeconds > 0 ?
                                 node.TimeoutSeconds : 30
                             };
-                            _nodeStates[node.Id] = state;
+                            _nodeStates[node.Id as string] = state;
                         }
 
                         // Use GraphExecutor to execute the graph
                         await _graphExecutor.ExecuteGraphAsync(
                             initialNodes,
-                            initialDependencyMap,
-                            async state => await
-                            SendProgressAsync(ws, state),
+                            async state => await SendProgressAsync(ws, state),
                             mainSshDetails,
                             sdTkn,
                             _nodeStates,
@@ -226,12 +223,12 @@ namespace MServer.Middleware
                         {
                             foreach (var node in initialNodes)
                             {
-                                var state = new NodeExecutionState
+                                var state = new execState
                                 {
-                                    NodeId = node.Id,
+                                    NodeId = node.Id as string,
                                     Status = "pending",
                                     Inputs = node.Inputs,
-                                    Args = node.Args,
+                                    Args = node.Args as string,
                                     Parallel = node.Parallel,
                                     Times = node.Times,
                                     Dependencies = node.Dependencies,
@@ -241,7 +238,7 @@ namespace MServer.Middleware
                                     TimeoutSeconds = node.TimeoutSeconds > 0 ?
                                     node.TimeoutSeconds : 30
                                 };
-                                _nodeStates[node.Id] = state;
+                                _nodeStates[node.Id as string] = state;
                             }
                         }
                     }
@@ -280,29 +277,26 @@ namespace MServer.Middleware
                             {
                                 _currentExecutionId = Guid.NewGuid().ToString();
                                 var dependencyMap = graphMsg.Nodes.ToDictionary(
-                                    n => n.Id,
-                                    n => n.Dependencies?.ToList() ??
-                                    new List<string>()
+                                    n => (string)n.Id,
+                                    n => n.Dependencies?.ToList() ?? new List<string>()
                                 );
 
                                 foreach (var node in graphMsg.Nodes)
                                 {
-                                    var state = new NodeExecutionState
+                                    var state = new execState
                                     {
-                                        NodeId = node.Id,
+                                        NodeId = (string)node.Id,
                                         Status = "pending",
                                         Inputs = node.Inputs,
-                                        Args = node.Args,
+                                        Args = node.Args as string,
                                         Parallel = node.Parallel,
                                         Times = node.Times,
                                         Dependencies = node.Dependencies,
                                         RetryCount = 0,
-                                        MaxRetries = node.MaxRetries > 0 ?
-                                        node.MaxRetries : 3,
-                                        TimeoutSeconds = node.TimeoutSeconds > 0 ?
-                                        node.TimeoutSeconds : 30
+                                        MaxRetries = node.MaxRetries > 0 ? node.MaxRetries : 3,
+                                        TimeoutSeconds = node.TimeoutSeconds > 0 ? node.TimeoutSeconds : 30
                                     };
-                                    _nodeStates[node.Id] = state;
+                                    _nodeStates[(string)node.Id] = state;
                                 }
 
                                 // Combine sdTkn and execution token
@@ -311,7 +305,6 @@ namespace MServer.Middleware
 
                                 await _graphExecutor.ExecuteGraphAsync(
                                     graphMsg.Nodes.ToArray(),
-                                    dependencyMap,
                                     async state =>
                                     {
                                         try
@@ -394,7 +387,7 @@ namespace MServer.Middleware
                             if (!string.IsNullOrEmpty(_currentExecutionId))
                             {
                                 var dict = new Dictionary
-                                <string, NodeExecutionState>(_nodeStates);
+                                <string, execState>(_nodeStates);
                                 await _statePersistence.SaveNodeStatesAsync
                                 (GetPersistenceFile(_currentExecutionId), dict);
                             }
@@ -449,7 +442,7 @@ namespace MServer.Middleware
         }
 
         private async Task SendProgressAsync
-        (WebSocket ws, NodeExecutionState state)
+        (WebSocket ws, execState state)
         {
             if (state.Error != null && state.Error
                 .Contains("Connection refused",

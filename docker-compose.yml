@@ -12,6 +12,7 @@ services:
       - ./MServer:/app/MServer
       - nuget-cache:/root/.nuget/packages
       - ./aspnetapp.pfx:/https/aspnetapp.pfx:ro
+      - ./node-scripts:/app/node-scripts   # <-- Add this line
     working_dir: /app/MServer
     command: dotnet watch run --urls http://0.0.0.0:5000;http://0.0.0.0:5001
     extra_hosts:

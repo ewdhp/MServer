@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using System;
-using System.Threading;
+using System.IO;
 
 namespace MServer
 {
@@ -10,41 +8,30 @@ namespace MServer
     {
         public static void Main(string[] args)
         {
-            var cts = new CancellationTokenSource();
-
-            Console.CancelKeyPress += (sender, e) =>
-            {
-                e.Cancel = true;
-                cts.Cancel();
-            };
-
-            var host = CreateHostBuilder(args).Build();
-            var lifetime = host.Services
-                .GetRequiredService<IHostApplicationLifetime>();
-            lifetime.ApplicationStopping.Register(OnShutdown);
-            host.RunAsync(cts.Token)
-                .GetAwaiter().GetResult();
-        }
-
-        private static void OnShutdown()
-        {
-            Console.WriteLine("Application is shutting down...");
+            CreateHostBuilder(args).Build().Run();
         }
 
         public static IHostBuilder CreateHostBuilder(string[] args) =>
             Host.CreateDefaultBuilder(args)
                 .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    webBuilder.UseStartup<Startup>();
-                    webBuilder.ConfigureKestrel((context, serverOptions) =>
+                    webBuilder.ConfigureKestrel(options =>
                     {
-                        serverOptions.Configure(context.Configuration.GetSection("Kestrel"));
-                        serverOptions.ListenAnyIP(5001, listenOptions =>
+                        options.ListenAnyIP(5000); // HTTP always enabled
+
+                        // Enable HTTPS only if the certificate exists
+                        var certPath = "aspnetapp.pfx"; // relative to /home/ewd/MServer/MServer
+                        var certPassword = "admin";
+                        var fullCertPath = Path.Combine(Directory.GetCurrentDirectory(), certPath);
+                        if (File.Exists(fullCertPath))
                         {
-                            listenOptions.UseHttps("/https/aspnetapp.pfx", "admin");
-                        });
+                            options.ListenAnyIP(5001, listenOptions =>
+                            {
+                                listenOptions.UseHttps(fullCertPath, certPassword);
+                            });
+                        }
                     });
-                    webBuilder.UseUrls("http://localhost:5000", "https://localhost:5001");
+                    webBuilder.UseStartup<Startup>();
                 });
     }
 }

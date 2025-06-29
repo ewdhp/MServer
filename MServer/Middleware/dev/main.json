@@ -1,24 +1,25 @@
 {
+  "ver": 1,
   "type": "graph_execute",
   "repeat": 1,
   "ssh": {
-    "host": "host.docker.internal",
+    "host": "localhost",
     "port": 22,
     "username": "ewd",
     "password": "2020"
   },
   "nodes": [
     {
-      "id": "node1",
+      "id": "main1",
       "inputs": {
-        "host": "host.docker.internal",
+        "host": "localhost",
         "port": 22,
         "username": "ewd",
         "password": "2020",
-        "data": "start"
+        "data": "main_start"
       },
       "args": ["echo", "$inputs.data"],
-      "script": "node1.sh",
+      "script": "main1.sh",
       "parallel": true,
       "times": 1,
       "dependencies": [],
@@ -26,53 +27,53 @@
       "timeoutSeconds": 10
     },
     {
-      "id": "node2",
+      "id": "main2",
       "inputs": {
-        "host": "host.docker.internal",
+        "host": "localhost",
         "port": 22,
         "username": "ewd",
         "password": "2020",
         "data": "$parent.output"
       },
       "args": ["echo", "$inputs.data"],
-      "script": "node2.sh",
+      "script": "main2.sh",
       "parallel": true,
       "times": 1,
-      "dependencies": ["node1"],
+      "dependencies": ["main1"],
       "maxRetries": 2,
       "timeoutSeconds": 10
     },
     {
-      "id": "node3",
+      "id": "main3",
       "inputs": {
-        "host": "host.docker.internal",
+        "host": "localhost",
         "port": 22,
         "username": "ewd",
         "password": "2020",
         "data": "$parent.output"
       },
       "args": ["echo", "$inputs.data"],
-      "script": "node3.sh",
+      "script": "main3.sh",
       "parallel": true,
       "times": 1,
-      "dependencies": ["node1"],
+      "dependencies": ["main1"],
       "maxRetries": 2,
       "timeoutSeconds": 10
     },
     {
-      "id": "node4",
+      "id": "main4",
       "inputs": {
-        "host": "host.docker.internal",
+        "host": "localhost",
         "port": 22,
         "username": "ewd",
         "password": "2020",
         "data": "$parent.output"
       },
       "args": ["echo", "$inputs.data"],
-      "script": "node4.sh",
+      "script": "main4.sh",
       "parallel": false,
       "times": 1,
-      "dependencies": ["node2"],
+      "dependencies": ["main2"],
       "maxRetries": 2,
       "timeoutSeconds": 10
     }
