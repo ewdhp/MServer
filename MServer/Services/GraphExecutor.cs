@@ -30,17 +30,18 @@ public class GraphExecutor(SshService sshService)
     // Writes the output of a node to a JSON file
     // The output is serialized to JSON format 
     // and saved to a file named <nodeId>_output.json 
-    // in the output directory.  
+    // in the output directory.
+
     public async Task ExecuteGraphAsync(
         Node[] nodes,
         Func<execState, Task> onProgress,
         SshDetails mainSshDetails,
         CancellationToken cancellationToken,
-        ConcurrentDictionary<string, execState> sharedStates = null,
+        ConcurrentDictionary<string, execState> sst = null,
         Func<bool> isPaused = null
     )
     {
-        var nst = sharedStates ?? new
+        var nst = sst ?? new
         ConcurrentDictionary<string, execState>(
             nodes.ToDictionary(
                 n => (string)n.Id,
@@ -61,7 +62,8 @@ public class GraphExecutor(SshService sshService)
                     TimeoutSeconds = n.TimeoutSeconds
                 }));
 
-        while (nst.Values.Any(s => s.Status == "pending" || s.Status == "running"))
+        while (nst.Values.Any(s => s.Status == "pending" ||
+                s.Status == "running"))
         {
             foreach (var node in nodes)
             {
@@ -93,8 +95,10 @@ public class GraphExecutor(SshService sshService)
                         try
                         {
                             string inDataArgs = "";
-                            if (node.Inputs is Dictionary<string, object> dict &&
-                                dict.TryGetValue("data", out var val))
+                            if (node.Inputs is Dictionary
+                               <string, object> dict &&
+                                dict.TryGetValue
+                                ("data", out var val))
                             {
                                 if (val is string s && s == "$parent.output" &&
                                     node.Dependencies != null &&
