@@ -23,7 +23,13 @@ namespace MServer.Services
             var asyncResult = await
             Task.Factory.StartNew(() => cmd.Execute());
             client.Disconnect();
-            return cmd.Result;
+
+            // Log both stdout and stderr for debugging
+            Console.WriteLine($"[SSH DEBUG] STDOUT: {cmd.Result}");
+            Console.WriteLine($"[SSH DEBUG] STDERR: {cmd.Error}");
+
+            // Return both for debugging
+            return string.IsNullOrWhiteSpace(cmd.Result) ? cmd.Error : cmd.Result;
         }
     }
 }
