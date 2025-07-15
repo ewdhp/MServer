@@ -6,8 +6,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.IdentityModel.Tokens;
-using MServer.Middleware;
+using MServer.Middleware.Session;
 using MServer.Services;
+using MServer.Middleware.Protocols;
 using System.Text;
 using MServer.Data;
 using System.Net.Http;
@@ -151,8 +152,8 @@ namespace MServer
             app.UseAuthentication();
             app.UseAuthorization();
 
-            // Add UnifiedAuth middleware for WebSocket requests
-            app.UseMiddleware<UnifiedAuth>();
+            // Add SessionRouter middleware for WebSocket requests
+            app.UseMiddleware<SessionRouter>();
 
             // Add other middlewares as needed
             app.UseMiddleware<JwtMiddleware>();

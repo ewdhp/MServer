@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-namespace MServer.Middleware
+namespace MServer.Middleware.Protocols
 {
     public class WebSocketMessageHandler
     {
