@@ -227,6 +227,16 @@ public class GraphExecutor(SshService sshService)
                             string sshOutput;
                             try
                             {
+                                // Validate SSH details before attempting connection
+                                if (mainSshDetails == null || 
+                                    string.IsNullOrEmpty(mainSshDetails.Host) || 
+                                    string.IsNullOrEmpty(mainSshDetails.Username))
+                                {
+                                    throw new ArgumentException("Invalid SSH configuration. Host and Username are required.");
+                                }
+
+                                Console.WriteLine($"[SSH DEBUG] Using SSH details - Host: {mainSshDetails.Host}, Port: {mainSshDetails.Port}, User: {mainSshDetails.Username}");
+
                                 string command =
                                     $"sh {scriptPath} " +
                                     $"{string.Join(" ", resArgs.Select(a => $"\"{a}\""))}";
@@ -241,7 +251,14 @@ public class GraphExecutor(SshService sshService)
                                     node.Id,
                                     ex.Message
                                 );
-                                sshOutput = "";
+                                
+                                // Set more descriptive error message
+                                state.Error = $"SSH connection failed to {mainSshDetails?.Host}:{mainSshDetails?.Port} - {ex.Message}";
+                                state.Status = "failed";
+                                state.EndTime = DateTime.UtcNow;
+                                if (onProgress != null)
+                                    await onProgress(state);
+                                return;
                             }
                             Console.WriteLine(
                                 "[DEBUG] Node '{0}' SSH output (raw): [{1}]",
