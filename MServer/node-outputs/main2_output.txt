@@ -1,2 +1,0 @@
-Given parameters: echo main2 command1 executed echo main2 command2 executed
-main1.sh output: main_start

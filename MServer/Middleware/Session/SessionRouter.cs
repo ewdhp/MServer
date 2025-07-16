@@ -40,15 +40,11 @@ public class SessionRouter
         // Persistence file path (for demonstration)
         private const string PersistenceFile = "node_states.json";
 
-        // Add a field to track the current execution ID
-        private string _currentExecutionId = null;
-
         // Add a field to track scheduled recurring jobs
         private readonly ConcurrentDictionary<string, CancellationTokenSource>
         _recurringExecutions = new();
 
         // Add this field to track the current execution's cancellation token source
-        private CancellationTokenSource _currentExecutionCts = null;
 
     public SessionRouter(
         RequestDelegate next,

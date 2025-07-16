@@ -1,1 +1,0 @@
-main1.sh output: main_start
