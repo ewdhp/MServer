@@ -23,12 +23,12 @@ namespace MServer.Middleware.Session
     }
 
 public class SessionRouter
-    {
+{
         private readonly RequestDelegate _next;
     private readonly ILogger<SessionRouter> _logger;
-        private readonly GraphExecutor _graphExecutor;
-        private readonly StatePersistenceService _statePersistence;
-        private readonly WebSocketMessageHandler _wsHandler;
+    private readonly GraphExecutor _graphExecutor;
+    private readonly StatePersistenceService _statePersistence;
+    private readonly WebSocketMessageHandler _wsHandler;
 
         // Track execution state for each node by node ID
         private readonly ConcurrentDictionary<string, execState>
@@ -187,9 +187,5 @@ public class SessionRouter
         {
             return $"{PersistenceFile}.{executionId}.json";
         }
-
-        // The backend generates a unique state file name for each execution:
-        // private string GetPersistenceFile(string executionId) => $"{PersistenceFile}.{executionId}.json";
-        // No need for the client to specify state file or execution ID in the config.
     }
 }
