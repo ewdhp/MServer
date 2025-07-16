@@ -50,3 +50,5 @@ secrets.json
 docker-compose.override.yml
 
 package-lock.json
+MServer/node-outputs/main1_output.txt
+MServer/node-outputs/main2_output.txt
