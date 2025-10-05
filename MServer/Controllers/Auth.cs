@@ -75,12 +75,18 @@ namespace MServer.Controllers
 
             try
             {
-                var existingUser = _context.Users.FirstOrDefault(u => u.Phone == request.Phone);
+                var existingUser = _context.Users
+                .FirstOrDefault(u => u.Phone == request.Phone);
 
                 if (existingUser != null)
                 {
-                    var newToken = _tokenManagementService.IssueToken(existingUser);
-                    _auditLoggingService.LogAuthenticationAttempt(existingUser.Id, true, new { Phone = existingUser.Phone });
+                    var newToken = _tokenManagementService
+                    .IssueToken(existingUser);
+                    _auditLoggingService
+                    .LogAuthenticationAttempt(
+                        existingUser.Id, true, 
+                        new { Phone = existingUser.Phone }
+                    );
 
                     return Ok(new
                     {

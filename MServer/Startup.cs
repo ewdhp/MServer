@@ -48,6 +48,10 @@ namespace MServer
             services.AddSingleton<StatePersistenceService>();
             services.AddSingleton<WebSocketMessageHandler>();
             services.AddSingleton<IAuditLoggingService, AuditLoggingService>();
+            services.AddSingleton<TotpService>();
+            services.AddSingleton<EncryptedCommandService>();
+            services.AddSingleton<EncryptedCommandSetup>();
+            services.AddHostedService<EncryptedCommandInitializationService>();
             // Register AuthModule
             services.AddSingleton<AuthModule>();
 
